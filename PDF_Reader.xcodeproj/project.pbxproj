@@ -6,8 +6,14 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		92499D502EEE70FF001F9E80 /* GoogleGenerativeAI in Frameworks */ = {isa = PBXBuildFile; productRef = 92499D4F2EEE70FF001F9E80 /* GoogleGenerativeAI */; };
+		92499D522EEE80001F9E80 /* VecturaKit in Frameworks */ = {isa = PBXBuildFile; productRef = 92499D512EEE80001F9E80 /* VecturaKit */; };
+		92499D542EEE80001F9E80 /* VecturaNLKit in Frameworks */ = {isa = PBXBuildFile; productRef = 92499D532EEE80001F9E80 /* VecturaNLKit */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
-		92A725502EEE4BD000D93F22 /* PDF_Reader.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PDF_Reader.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		92A725502EEE4BD000D93F22 /* Shiori.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Shiori.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -23,6 +29,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				92499D502EEE70FF001F9E80 /* GoogleGenerativeAI in Frameworks */,
+				92499D522EEE80001F9E80 /* VecturaKit in Frameworks */,
+				92499D542EEE80001F9E80 /* VecturaNLKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -40,7 +49,7 @@
 		92A725512EEE4BD000D93F22 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				92A725502EEE4BD000D93F22 /* PDF_Reader.app */,
+				92A725502EEE4BD000D93F22 /* Shiori.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -48,9 +57,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		92A7254F2EEE4BD000D93F22 /* PDF_Reader */ = {
+		92A7254F2EEE4BD000D93F22 /* Shiori */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 92A7255B2EEE4BD400D93F22 /* Build configuration list for PBXNativeTarget "PDF_Reader" */;
+			buildConfigurationList = 92A7255B2EEE4BD400D93F22 /* Build configuration list for PBXNativeTarget "Shiori" */;
 			buildPhases = (
 				92A7254C2EEE4BD000D93F22 /* Sources */,
 				92A7254D2EEE4BD000D93F22 /* Frameworks */,
@@ -63,11 +72,14 @@
 			fileSystemSynchronizedGroups = (
 				92A725522EEE4BD000D93F22 /* PDF_Reader */,
 			);
-			name = PDF_Reader;
+			name = Shiori;
 			packageProductDependencies = (
+				92499D4F2EEE70FF001F9E80 /* GoogleGenerativeAI */,
+				92499D512EEE80001F9E80 /* VecturaKit */,
+				92499D532EEE80001F9E80 /* VecturaNLKit */,
 			);
 			productName = PDF_Reader;
-			productReference = 92A725502EEE4BD000D93F22 /* PDF_Reader.app */;
+			productReference = 92A725502EEE4BD000D93F22 /* Shiori.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -94,12 +106,16 @@
 			);
 			mainGroup = 92A725472EEE4BD000D93F22;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				92499D4E2EEE70FF001F9E80 /* XCRemoteSwiftPackageReference "generative-ai-swift" */,
+				92499D552EEE80001F9E80 /* XCRemoteSwiftPackageReference "VecturaKit" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 92A725512EEE4BD000D93F22 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				92A7254F2EEE4BD000D93F22 /* PDF_Reader */,
+				92A7254F2EEE4BD000D93F22 /* Shiori */,
 			);
 		};
 /* End PBXProject section */
@@ -251,8 +267,11 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 887J2S2SB5;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Shiori-AI";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -263,7 +282,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "Swift-Beginners.PDF-Reader";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.nori8774.shiori-AI";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -282,8 +301,11 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 887J2S2SB5;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Shiori-AI";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -294,7 +316,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "Swift-Beginners.PDF-Reader";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.nori8774.shiori-AI";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -318,7 +340,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		92A7255B2EEE4BD400D93F22 /* Build configuration list for PBXNativeTarget "PDF_Reader" */ = {
+		92A7255B2EEE4BD400D93F22 /* Build configuration list for PBXNativeTarget "Shiori" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				92A7255C2EEE4BD400D93F22 /* Debug */,
@@ -328,6 +350,43 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		92499D4E2EEE70FF001F9E80 /* XCRemoteSwiftPackageReference "generative-ai-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google/generative-ai-swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.5.6;
+			};
+		};
+		92499D552EEE80001F9E80 /* XCRemoteSwiftPackageReference "VecturaKit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/rryam/VecturaKit";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.3.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		92499D4F2EEE70FF001F9E80 /* GoogleGenerativeAI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 92499D4E2EEE70FF001F9E80 /* XCRemoteSwiftPackageReference "generative-ai-swift" */;
+			productName = GoogleGenerativeAI;
+		};
+		92499D512EEE80001F9E80 /* VecturaKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 92499D552EEE80001F9E80 /* XCRemoteSwiftPackageReference "VecturaKit" */;
+			productName = VecturaKit;
+		};
+		92499D532EEE80001F9E80 /* VecturaNLKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 92499D552EEE80001F9E80 /* XCRemoteSwiftPackageReference "VecturaKit" */;
+			productName = VecturaNLKit;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 92A725482EEE4BD000D93F22 /* Project object */;
 }
