@@ -13,6 +13,11 @@ public actor GeminiEmbedder: VecturaEmbedder {
 
     /// APIキーをKeychainから取得して初期化
     public init() async throws {
+        // 同意チェック
+        guard AIConsentManager.shared.hasConsent else {
+            throw GeminiEmbedderError.consentRequired
+        }
+
         guard let data = KeychainHelper.standard.read(service: "com.myapp.gemini", account: "gemini_api_key"),
               let apiKey = String(data: data, encoding: .utf8) else {
             throw GeminiEmbedderError.apiKeyNotFound
@@ -129,6 +134,7 @@ public actor GeminiEmbedder: VecturaEmbedder {
 // MARK: - Errors
 
 public enum GeminiEmbedderError: LocalizedError {
+    case consentRequired
     case apiKeyNotFound
     case emptyText(index: Int)
     case invalidURL
@@ -139,6 +145,8 @@ public enum GeminiEmbedderError: LocalizedError {
 
     public var errorDescription: String? {
         switch self {
+        case .consentRequired:
+            return "AI機能を使用するにはデータ送信への同意が必要です。"
         case .apiKeyNotFound:
             return "Gemini APIキーが見つかりません。設定画面で設定してください。"
         case .emptyText(let index):

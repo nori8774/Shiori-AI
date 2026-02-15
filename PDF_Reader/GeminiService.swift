@@ -2,6 +2,22 @@ import Foundation
 import UIKit
 import GoogleGenerativeAI
 
+// MARK: - AI Consent Error
+
+enum AIConsentError: LocalizedError {
+    case consentRequired
+    case apiKeyMissing
+
+    var errorDescription: String? {
+        switch self {
+        case .consentRequired:
+            return "AI機能を使用するにはデータ送信への同意が必要です。"
+        case .apiKeyMissing:
+            return "APIキーが設定されていません。設定画面からAPIキーを入力してください。"
+        }
+    }
+}
+
 // AIからの返答データ
 struct AIResponse: Codable {
     let rawText: String // 原文
@@ -36,13 +52,25 @@ class GeminiService {
 
     private init() {}
 
+    // MARK: - 同意チェック
+
+    /// AI機能使用前の同意チェック
+    private func checkConsent() throws {
+        guard AIConsentManager.shared.hasConsent else {
+            throw AIConsentError.consentRequired
+        }
+    }
+
     // MARK: - 検索用要約生成
 
     /// しおりページの検索用要約を生成（マーカーテキストを優先）
     func generateSearchSummary(rawText: String, markerTexts: [String]?) async throws -> String {
+        // 同意チェック
+        try checkConsent()
+
         guard let data = KeychainHelper.standard.read(service: "com.myapp.gemini", account: "gemini_api_key"),
               let apiKey = String(data: data, encoding: .utf8) else {
-            throw NSError(domain: "GeminiService", code: 401, userInfo: [NSLocalizedDescriptionKey: "APIキーが設定されていません。"])
+            throw AIConsentError.apiKeyMissing
         }
 
         let model = GenerativeModel(name: "gemini-2.5-flash", apiKey: apiKey)
@@ -81,10 +109,12 @@ class GeminiService {
     // 【変更】instruction（指示）を受け取れるように修正
     // デフォルト値は「要約」にしておく
     func analyzePage(image: UIImage, instruction: String = "この内容の要点を3つ箇条書きでまとめてください") async throws -> AIResponse {
-        
+        // 同意チェック
+        try checkConsent()
+
         guard let data = KeychainHelper.standard.read(service: "com.myapp.gemini", account: "gemini_api_key"),
               let apiKey = String(data: data, encoding: .utf8) else {
-            throw NSError(domain: "GeminiService", code: 401, userInfo: [NSLocalizedDescriptionKey: "APIキーが設定されていません。"])
+            throw AIConsentError.apiKeyMissing
         }
         
         // Gemini 2.5 Flash を使用

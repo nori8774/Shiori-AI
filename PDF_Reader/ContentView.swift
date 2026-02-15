@@ -76,6 +76,11 @@ struct ContentView: View {
     // 音声読み上げ
     @ObservedObject var ttsManager = TextToSpeechManager.shared
 
+    // AI同意管理
+    @ObservedObject var consentManager = AIConsentManager.shared
+    @State private var showAIConsentSheet = false
+    @State private var pendingAIAction: (() -> Void)?
+
     let columns = [GridItem(.adaptive(minimum: 100, maximum: 150), spacing: 20)]
 
     // 選択中の本棚でフィルタされた本の一覧
@@ -329,17 +334,17 @@ struct ContentView: View {
 
                         // AI
                         Menu {
-                            Button(action: { readCurrentPageAloud() }) {
+                            Button(action: { executeWithConsentCheck { readCurrentPageAloud() } }) {
                                 Label("音声読み上げ", systemImage: "speaker.wave.2")
                             }
                             .disabled(ttsManager.isSpeaking)
 
-                            Button(action: { analyzeCurrentPage(instruction: "このページの内容を自然な日本語に翻訳してください") }) { Label("日本語に翻訳", systemImage: "character.book.closed.ja") }
-                            Button(action: { questionText = ""; showQuestionInput = true }) { Label("このページに質問...", systemImage: "bubble.left.and.bubble.right") }
+                            Button(action: { executeWithConsentCheck { analyzeCurrentPage(instruction: "このページの内容を自然な日本語に翻訳してください") } }) { Label("日本語に翻訳", systemImage: "character.book.closed.ja") }
+                            Button(action: { executeWithConsentCheck { questionText = ""; showQuestionInput = true } }) { Label("このページに質問...", systemImage: "bubble.left.and.bubble.right") }
 
                             Divider()
 
-                            Button(action: { showPaperSummaryConfirm = true }) {
+                            Button(action: { executeWithConsentCheck { showPaperSummaryConfirm = true } }) {
                                 Label("論文を要約（全体）", systemImage: "doc.text.magnifyingglass")
                             }
                         } label: {
@@ -448,6 +453,16 @@ struct ContentView: View {
             } message: {
                 Text("この論文全体を解析し、要約ページ付きPDFを生成します。\n\n• 50ページ以下の論文に対応\n• 処理には数分かかる場合があります\n• 要約PDFは「要約」本棚に保存されます")
             }
+            // AI同意ダイアログ
+            .sheet(isPresented: $showAIConsentSheet) {
+                AIConsentView(isPresented: $showAIConsentSheet) {
+                    // 同意後にペンディング中のアクションを実行
+                    if let action = pendingAIAction {
+                        action()
+                        pendingAIAction = nil
+                    }
+                }
+            }
             // 論文要約完了アラート
             .alert("要約完了", isPresented: $showSummaryComplete) {
                 Button("要約を見る") {
@@ -471,7 +486,21 @@ struct ContentView: View {
     }
     
     // MARK: - Functions
-    
+
+    // MARK: - AI同意チェック
+
+    /// AI機能使用前に同意を確認し、未同意なら同意ダイアログを表示
+    func executeWithConsentCheck(_ action: @escaping () -> Void) {
+        if consentManager.hasConsent {
+            // 同意済み: そのまま実行
+            action()
+        } else {
+            // 未同意: ダイアログを表示し、同意後に実行
+            pendingAIAction = action
+            showAIConsentSheet = true
+        }
+    }
+
     func checkDirectionAndOpen(_ book: Book) {
         if let direction = book.isRightToLeft {
             openBook(book, direction: direction)
