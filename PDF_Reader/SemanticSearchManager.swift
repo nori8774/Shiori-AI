@@ -3,8 +3,10 @@ import SwiftUI
 import PDFKit
 import Combine
 import NaturalLanguage
+#if !targetEnvironment(macCatalyst)
 import VecturaKit
 import VecturaNLKit
+#endif
 
 // MARK: - Data Models
 
@@ -65,8 +67,10 @@ class SemanticSearchManager: ObservableObject {
     @Published var searchResults: [SearchResultItem] = []
     @Published var isSearching = false
 
+    #if !targetEnvironment(macCatalyst)
     private var vectorDB: VecturaKit?
     private var embedder: NLContextualEmbedder?
+    #endif
     private var chunks: [TextChunk] = []
     private let chunksFileName = "text_chunks.json"
 
@@ -79,14 +83,19 @@ class SemanticSearchManager: ObservableObject {
     }
 
     private init() {
+        #if !targetEnvironment(macCatalyst)
         Task {
             await initialize()
         }
+        #endif
     }
 
     // MARK: - Initialization
 
     func initialize() async {
+        #if targetEnvironment(macCatalyst)
+        print("SemanticSearchManager: Semantic search is not available on Mac")
+        #else
         do {
             // Create VecturaKit directory if needed
             if !FileManager.default.fileExists(atPath: vecturaDirectory.path) {
@@ -94,8 +103,6 @@ class SemanticSearchManager: ObservableObject {
             }
 
             // Initialize embedder with Japanese language support
-            // Note: NLLanguage.japanese might not be available for embeddings
-            // Fall back to English if Japanese is not supported
             if let japaneseEmbedder = try? await NLContextualEmbedder(language: .japanese) {
                 embedder = japaneseEmbedder
             } else {
@@ -131,11 +138,15 @@ class SemanticSearchManager: ObservableObject {
         } catch {
             print("Failed to initialize SemanticSearchManager: \(error)")
         }
+        #endif
     }
 
     // MARK: - Indexing
 
     func indexBook(_ book: Book) async throws {
+        #if targetEnvironment(macCatalyst)
+        throw SearchError.notAvailableOnMac
+        #else
         guard let vectorDB = vectorDB else {
             throw SearchError.notInitialized
         }
@@ -170,7 +181,7 @@ class SemanticSearchManager: ObservableObject {
             for chunk in pageChunks {
                 newChunks.append(chunk)
                 texts.append(chunk.text)
-                ids.append(chunk.id)  // TextChunk.id (UUID) を使用
+                ids.append(chunk.id)
             }
 
             indexingProgress = Float(pageIndex + 1) / Float(pageCount)
@@ -187,9 +198,11 @@ class SemanticSearchManager: ObservableObject {
 
         // Update book index status
         LibraryManager.shared.markBookAsIndexed(book)
+        #endif
     }
 
     func indexAllBooks() async {
+        #if !targetEnvironment(macCatalyst)
         let books = LibraryManager.shared.books.filter { !$0.isIndexed }
 
         for book in books {
@@ -199,16 +212,15 @@ class SemanticSearchManager: ObservableObject {
                 print("Failed to index \(book.fileName): \(error)")
             }
         }
+        #endif
     }
 
     // MARK: - Search
 
-    /// 検索を実行（本棚フィルタ対応）
-    /// - Parameters:
-    ///   - query: 検索クエリ
-    ///   - limit: 結果の最大数
-    ///   - bookshelfId: フィルタする本棚ID（nilなら全体検索）
     func search(query: String, limit: Int = 20, bookshelfId: UUID? = nil) async throws -> [SearchResultItem] {
+        #if targetEnvironment(macCatalyst)
+        throw SearchError.notAvailableOnMac
+        #else
         guard let vectorDB = vectorDB else {
             throw SearchError.notInitialized
         }
@@ -234,7 +246,6 @@ class SemanticSearchManager: ObservableObject {
         var searchResults: [SearchResultItem] = []
 
         for result in results {
-            // result.id と chunk.id は両方 UUID 型
             guard let chunk = chunks.first(where: { $0.id == result.id }) else {
                 continue
             }
@@ -255,7 +266,7 @@ class SemanticSearchManager: ObservableObject {
                 pdfFileName: chunk.pdfFileName,
                 pageIndex: chunk.pageIndex,
                 matchedText: chunk.text,
-                score: result.score,  // result.score は Float 型
+                score: result.score,
                 isMarkerText: chunk.isMarkerText || matchingMarker != nil,
                 markerColor: matchingMarker?.color
             )
@@ -268,13 +279,14 @@ class SemanticSearchManager: ObservableObject {
         // マーカー付きの結果を優先してソート
         searchResults.sort { item1, item2 in
             if item1.isMarkerText != item2.isMarkerText {
-                return item1.isMarkerText  // マーカー付きを先に
+                return item1.isMarkerText
             }
-            return item1.score > item2.score  // スコアが高い（類似度が高い）順
+            return item1.score > item2.score
         }
 
         self.searchResults = searchResults
         return searchResults
+        #endif
     }
 
     // MARK: - Text Extraction & Chunking
@@ -318,7 +330,6 @@ class SemanticSearchManager: ObservableObject {
             let potentialChunk = currentChunk.isEmpty ? sentence : currentChunk + "。" + sentence
 
             if potentialChunk.count > maxSize {
-                // Save current chunk if not empty
                 if !currentChunk.isEmpty {
                     let chunk = TextChunk(
                         id: UUID(),
@@ -331,11 +342,9 @@ class SemanticSearchManager: ObservableObject {
                     chunks.append(chunk)
                     chunkIndex += 1
 
-                    // Keep overlap
                     let overlapText = String(currentChunk.suffix(overlap))
                     currentChunk = overlapText + "。" + sentence
                 } else {
-                    // Single sentence is too long, split it
                     let chunk = TextChunk(
                         id: UUID(),
                         bookId: bookId,
@@ -360,7 +369,6 @@ class SemanticSearchManager: ObservableObject {
                 chunks.append(chunk)
                 chunkIndex += 1
 
-                // Keep overlap
                 currentChunk = String(potentialChunk.suffix(overlap))
             } else {
                 currentChunk = potentialChunk
@@ -410,9 +418,6 @@ class SemanticSearchManager: ObservableObject {
     func removeIndex(for book: Book) {
         chunks.removeAll { $0.bookId == book.id }
         saveChunks()
-
-        // Note: VecturaKit doesn't have a direct delete API in current version
-        // For full cleanup, would need to reinitialize the database
     }
 
     func hasIndex(for book: Book) -> Bool {
@@ -435,6 +440,7 @@ enum SearchError: LocalizedError {
     case pdfLoadFailed
     case indexingFailed
     case searchFailed
+    case notAvailableOnMac
 
     var errorDescription: String? {
         switch self {
@@ -446,6 +452,8 @@ enum SearchError: LocalizedError {
             return "インデックス作成に失敗しました"
         case .searchFailed:
             return "検索に失敗しました"
+        case .notAvailableOnMac:
+            return "セマンティック検索はMac版では利用できません"
         }
     }
 }

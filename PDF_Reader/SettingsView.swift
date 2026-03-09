@@ -14,6 +14,9 @@ struct SettingsView: View {
     @State private var showConsentSheet = false
     @State private var showRevokeConfirm = false
 
+    // マーカー入力設定
+    @ObservedObject var inputMethodSettings = InputMethodSettings.shared
+
     // Keychainで使用する識別子（アプリ内で統一）
     let serviceName = "com.myapp.gemini" // 任意の識別子に変えてOK
     let accountName = "gemini_api_key"
@@ -21,6 +24,22 @@ struct SettingsView: View {
     var body: some View {
         NavigationView {
             Form {
+                // MARK: - マーカー設定
+                Section(header: Text("マーカー設定")) {
+                    if InputMethodSettings.InputMethod.availableCases.count > 1 {
+                        Picker("入力方法", selection: $inputMethodSettings.inputMethod) {
+                            ForEach(InputMethodSettings.InputMethod.availableCases, id: \.self) { method in
+                                Text(method.displayName).tag(method)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                    }
+
+                    Text(inputMethodSettings.inputMethod.description)
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                }
+
                 // MARK: - ページめくりアニメーション設定
                 Section(header: Text("表示設定")) {
                     Toggle("ページめくりアニメーション", isOn: $pageTurnSettings.isPageTurnAnimationEnabled)
@@ -55,20 +74,30 @@ struct SettingsView: View {
                     Text("Google AI Studioで取得したAPIキーを入力してください。キーは端末内のKeychainに安全に保存されます。")
                         .font(.caption)
                         .foregroundColor(.gray)
-                    
-                    // キー入力欄（SecureFieldで文字を隠す）
+
+                    // キー入力欄
+                    #if targetEnvironment(macCatalyst)
+                    // Mac: SecureFieldはペースト時にバインディングが更新されない問題があるためTextFieldを使用
+                    TextField("API Keyを入力", text: $apiKeyInput)
+                        .textFieldStyle(.roundedBorder)
+                        .disableAutocorrection(true)
+                    #else
                     SecureField("API Keyを入力", text: $apiKeyInput)
                         .autocapitalization(.none)
                         .disableAutocorrection(true)
-                    
+                    #endif
+                }
+
+                Section {
                     Button(action: saveKey) {
-                        Text("保存する")
-                            .frame(maxWidth: .infinity)
-                            .foregroundColor(.white)
-                            .padding()
-                            .background(Color.blue)
-                            .cornerRadius(8)
+                        HStack {
+                            Spacer()
+                            Text("保存する")
+                                .fontWeight(.semibold)
+                            Spacer()
+                        }
                     }
+                    .disabled(apiKeyInput.isEmpty)
                 }
                 
                 Section {
@@ -164,14 +193,19 @@ struct SettingsView: View {
     // MARK: - Functions
     
     func saveKey() {
-        guard !apiKeyInput.isEmpty else { return }
-        
+        let trimmed = apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        print("saveKey called, input length: \(trimmed.count)")
+        guard !trimmed.isEmpty else {
+            print("saveKey: input is empty after trim")
+            return
+        }
+
         // 文字列をData型に変換して保存
-        if let data = apiKeyInput.data(using: .utf8) {
+        if let data = trimmed.data(using: .utf8) {
             KeychainHelper.standard.save(service: serviceName, account: accountName, data: data)
             apiKeyInput = "" // 入力欄をクリア
             loadStatus()     // 状態更新
-            print("API Key Saved safely!")
+            print("API Key Saved! isKeySaved=\(isKeySaved)")
         }
     }
     

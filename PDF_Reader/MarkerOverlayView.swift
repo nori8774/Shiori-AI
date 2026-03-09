@@ -53,7 +53,17 @@ struct MarkerCanvasRepresentable: UIViewRepresentable {
         canvasView.delegate = context.coordinator
         canvasView.backgroundColor = .clear
         canvasView.isOpaque = false
-        canvasView.drawingPolicy = .pencilOnly  // Apple Pencilのみ
+
+        // 設定に応じて入力方法を切り替え（Macでは常にanyInput）
+        #if targetEnvironment(macCatalyst)
+        canvasView.drawingPolicy = .anyInput
+        #else
+        if InputMethodSettings.shared.inputMethod == .pencil {
+            canvasView.drawingPolicy = .pencilOnly  // Apple Pencilのみ
+        } else {
+            canvasView.drawingPolicy = .anyInput  // 指での描画を許可
+        }
+        #endif
 
         // PKCanvasView内のスクロールを無効化（ページ送りと干渉しないように）
         canvasView.isScrollEnabled = false
@@ -67,6 +77,18 @@ struct MarkerCanvasRepresentable: UIViewRepresentable {
     func updateUIView(_ uiView: PKCanvasView, context: Context) {
         uiView.isUserInteractionEnabled = isMarkerMode
         context.coordinator.parent = self  // 親を更新
+
+        // 設定に応じて入力方法を切り替え（Macでは常にanyInput）
+        #if targetEnvironment(macCatalyst)
+        uiView.drawingPolicy = .anyInput
+        #else
+        if InputMethodSettings.shared.inputMethod == .pencil {
+            uiView.drawingPolicy = .pencilOnly
+        } else {
+            uiView.drawingPolicy = .anyInput
+        }
+        #endif
+
         updateTool()
     }
 
@@ -102,11 +124,7 @@ struct MarkerCanvasRepresentable: UIViewRepresentable {
 
         private func processStrokes(_ strokes: [PKStroke], canvasView: PKCanvasView) {
             guard let book = parent.currentBook else { return }
-            guard let currentPage = parent.pdfView.currentPage else { return }
             guard let document = parent.pdfView.document else { return }
-
-            // PDFViewから直接現在のページインデックスを取得（より正確）
-            var pageIndex = document.index(for: currentPage)
 
             // 最後のストロークを処理
             guard let lastStroke = strokes.last else { return }
@@ -121,142 +139,62 @@ struct MarkerCanvasRepresentable: UIViewRepresentable {
                 canvasView.drawing = PKDrawing()
             }
 
-            // PDFページのサイズとスケール
-            let pageRect = currentPage.bounds(for: .mediaBox)
             let pdfView = parent.pdfView
-            let scaleFactor = pdfView.scaleFactor
-            let viewSize = canvasView.bounds.size
-
-            // 見開きモードかどうかを判定
-            let isTwoUp = pdfView.displayMode == .twoUp
             let isRTL = parent.isRightToLeft
 
-            // PDFViewでのページ表示領域を計算
-            let scaledPageWidth = pageRect.width * scaleFactor
-            let scaledPageHeight = pageRect.height * scaleFactor
+            // 座標変換:
+            // 1. canvasView.convert(to: pdfView) → pdfViewのbounds座標（UIView.convertがtransformを自動処理）
+            // 2. pdfView.convert(to: page) → PDFページ座標
+            // 3. RTLモード時: pdfViewにscaleX:-1が適用されているため、
+            //    bounds座標は視覚的に左右反転している。pdfView.convert は内部LTRレイアウトで
+            //    変換するため、結果のページx座標も反転している → pageRect.width - x で補正
 
-            // オフセットの計算
-            let offsetX: CGFloat
-            let offsetY: CGFloat
+            // 1. ストロークの最初の点からターゲットページを特定
+            guard let firstPoint = strokePoints.first else { return }
+            let pointInPDFView = canvasView.convert(firstPoint, to: pdfView)
 
-            // 実際にマーカーを追加するページを決定
-            var targetPage = currentPage
+            // ページを特定（最も近いページ）
+            guard let targetPage = pdfView.page(for: pointInPDFView, nearest: true) else { return }
+            let pageIndex = document.index(for: targetPage)
+            let pageRect = targetPage.bounds(for: .mediaBox)
 
-            if isTwoUp {
-                // 見開きモード：2ページ分の幅を考慮
-                let twoPageWidth = scaledPageWidth * 2
-                let baseOffsetX = (viewSize.width - twoPageWidth) / 2
-                offsetY = (viewSize.height - scaledPageHeight) / 2
+            // 2. 全ストローク点をPDFページ座標に変換
+            let normalizedPoints = strokePoints.map { canvasPoint -> CGPoint in
+                let ptInPDFView = canvasView.convert(canvasPoint, to: pdfView)
+                var ptInPage = pdfView.convert(ptInPDFView, to: targetPage)
 
-                // 見開きモードでは、ストロークの位置から実際に描画したページを判定する
-                let strokeX = strokePoints.first?.x ?? 0
-                let centerX = viewSize.width / 2
-
-                // ストロークが画面の左半分か右半分かを判定
-                // ストローク座標系では: strokeX < centerX が左半分
-                // RTLモードでもPKCanvasViewの座標系は反転しない（PDFViewのみ反転）
-                let isStrokeOnLeftSide = strokeX < centerX
-
-                // オフセットを設定（RTLモードでもストローク座標は反転しているので、そのまま使用）
-                if strokeX < centerX {
-                    offsetX = baseOffsetX  // ストローク座標での左側
-                } else {
-                    offsetX = baseOffsetX + scaledPageWidth  // ストローク座標での右側
+                // RTL補正: 内部LTRレイアウトにより反転したx座標を元に戻す
+                #if !targetEnvironment(macCatalyst)
+                if isRTL {
+                    ptInPage.x = pageRect.width - ptInPage.x
                 }
+                #endif
 
-                // 見開きで表示されているページペアを特定
-                // visiblePagesを使って実際に表示されているページを取得
-                let visiblePages = pdfView.visiblePages
-                let visibleIndices = visiblePages.compactMap { document.index(for: $0) }.sorted()
+                // 正規化（0-1の範囲に変換）
+                let normalizedX = ptInPage.x / pageRect.width
+                let normalizedY = ptInPage.y / pageRect.height
 
-                print("visiblePages indices: \(visibleIndices)")
-
-                // 実際に表示されている2ページから選択
-                let actualTargetPageIndex: Int
-                if visibleIndices.count >= 2 {
-                    // 2ページ表示されている場合
-                    let smallerIdx = visibleIndices[0]
-                    let largerIdx = visibleIndices[1]
-
-                    // PDFKitの論理配置: 左=smallerIdx、右=largerIdx
-                    // RTLモードでは画面が scaleX: -1 で反転されているため、
-                    // ユーザーの見た目: 左=largerIdx、右=smallerIdx
-                    //
-                    // isStrokeOnLeftSide は「ユーザーが画面のどちら側に描いたか」を示す
-                    // RTL: 画面左側に描いた → largerIdxに追加
-                    // RTL: 画面右側に描いた → smallerIdxに追加
-                    if isRTL {
-                        if isStrokeOnLeftSide {
-                            actualTargetPageIndex = largerIdx   // 画面左側 = 大きい番号
-                        } else {
-                            actualTargetPageIndex = smallerIdx  // 画面右側 = 小さい番号
-                        }
-                    } else {
-                        // LTR: 画面左側 = 小さい番号、画面右側 = 大きい番号
-                        if isStrokeOnLeftSide {
-                            actualTargetPageIndex = smallerIdx
-                        } else {
-                            actualTargetPageIndex = largerIdx
-                        }
-                    }
-                } else if visibleIndices.count == 1 {
-                    // 1ページのみ表示（最初や最後のページ）
-                    actualTargetPageIndex = visibleIndices[0]
-                } else {
-                    // フォールバック
-                    actualTargetPageIndex = document.index(for: currentPage)
-                }
-
-                // ページが有効範囲内かチェック
-                if actualTargetPageIndex >= 0 && actualTargetPageIndex < document.pageCount {
-                    pageIndex = actualTargetPageIndex
-                    if let page = document.page(at: actualTargetPageIndex) {
-                        targetPage = page
-                    }
-                }
-
-                print("strokeX: \(strokeX), centerX: \(centerX), isStrokeOnLeftSide (screen): \(isStrokeOnLeftSide)")
-                print("pdfView.currentPage index: \(document.index(for: currentPage)), visiblePages: \(visibleIndices)")
-                print("Actual target pageIndex: \(pageIndex)")
-            } else {
-                // 単ページモード：中央配置
-                offsetX = (viewSize.width - scaledPageWidth) / 2
-                offsetY = (viewSize.height - scaledPageHeight) / 2
+                return CGPoint(x: normalizedX, y: normalizedY)
             }
 
             // デバッグ情報
             print("=== Marker Debug ===")
-            print("Canvas size: \(viewSize)")
-            print("PDF page size: \(pageRect.size)")
-            print("Scale factor: \(scaleFactor)")
-            print("Scaled page size: (\(scaledPageWidth), \(scaledPageHeight))")
-            print("isTwoUp: \(isTwoUp)")
-            print("Offset: (\(offsetX), \(offsetY))")
-            print("isRTL: \(isRTL)")
-            print("pageIndex: \(pageIndex)")
-            if let firstPoint = strokePoints.first {
-                print("Stroke first point (screen): \(firstPoint)")
+            print("isRTL: \(isRTL), pageIndex: \(pageIndex)")
+            if let firstCanvas = strokePoints.first {
+                let ptBounds = canvasView.convert(firstCanvas, to: pdfView)
+                let ptInPage = pdfView.convert(ptBounds, to: targetPage)
+                print("canvas: \(firstCanvas) → bounds: \(ptBounds) → page: \(ptInPage)")
+                if isRTL {
+                    print("RTL corrected page x: \(pageRect.width - ptInPage.x)")
+                }
             }
-
-            // ストロークの点をPDF座標に変換
-            let normalizedPoints = strokePoints.map { point -> CGPoint in
-                // 画面座標からPDF表示領域内の相対座標に変換
-                let relativeX = (point.x - offsetX) / scaledPageWidth
-                let relativeY = (point.y - offsetY) / scaledPageHeight
-
-                // Y座標を反転（画面座標は上が0、PDF座標は下が0）
-                let normalizedY = 1.0 - relativeY
-
-                return CGPoint(x: relativeX, y: normalizedY)
-            }
-
             if let firstNorm = normalizedPoints.first {
-                print("Normalized first point: \(firstNorm)")
+                print("Normalized: \(firstNorm)")
             }
             print("===================")
 
             // フリーハンドモードでマーカー処理
-            processFreeformStroke(normalizedPoints, book: book, pageIndex: pageIndex, targetPage: targetPage, pageRect: pageRect, isRTL: isRTL)
+            processFreeformStroke(normalizedPoints, book: book, pageIndex: pageIndex, targetPage: targetPage, pageRect: pageRect, isRTL: parent.isRightToLeft)
         }
 
         // MARK: - Freeform Mode (図形認識：描いた線を直線化)
@@ -405,10 +343,23 @@ struct MarkerToolbarView: View {
                 }
             }
 
-            Text("Apple Pencilで線を引くとハイライト\n指でスワイプするとページ送り")
-                .font(.caption2)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
+            // 入力方法に応じたヒントテキスト
+            if DeviceHelper.isMac {
+                Text("ドラッグで線を引くとハイライト")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            } else if InputMethodSettings.shared.inputMethod == .pencil {
+                Text("Apple Pencilで線を引くとハイライト\n指でスワイプするとページ送り")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            } else {
+                Text("指で線を引くとハイライト\n設定からApple Pencilモードに変更可能")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
 
             // このページのマーカー一覧（個別削除用）- 見開き時は両ページ分表示
             if let pdfFileName = pdfFileName {

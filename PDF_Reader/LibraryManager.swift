@@ -13,6 +13,8 @@ struct Book: Identifiable, Codable {
     var isIndexed: Bool = false
     // 所属する本棚のID（nilなら未分類）
     var bookshelfId: UUID?
+    // 最後に読んだページ（読書位置の記憶用）
+    var lastReadPage: Int = 0
 }
 
 class LibraryManager: ObservableObject {
@@ -85,6 +87,14 @@ class LibraryManager: ObservableObject {
             var updatedBook = books[index]
             updatedBook.isIndexed = false
             books[index] = updatedBook
+            saveBooks()
+        }
+    }
+
+    // 最後に読んだページを更新
+    func updateLastReadPage(book: Book, pageIndex: Int) {
+        if let index = books.firstIndex(where: { $0.id == book.id }) {
+            books[index].lastReadPage = pageIndex
             saveBooks()
         }
     }

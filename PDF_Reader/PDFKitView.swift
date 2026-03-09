@@ -32,6 +32,7 @@ struct PDFKitView: UIViewRepresentable {
 
         // ラッパー作成
         let wrapper = PDFWrapperView(pdfView: pdfView)
+        wrapper.coordinator = context.coordinator
 
         // ジェスチャー設定
         let swipeLeft = UISwipeGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleSwipe(_:)))
@@ -42,6 +43,12 @@ struct PDFKitView: UIViewRepresentable {
         swipeRight.direction = .right
         wrapper.addGestureRecognizer(swipeRight)
 
+        #if targetEnvironment(macCatalyst)
+        // Mac: クリックでページ送り（画面左右エリア）
+        let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
+        wrapper.addGestureRecognizer(tapGesture)
+        #endif
+
         NotificationCenter.default.addObserver(
             context.coordinator,
             selector: #selector(Coordinator.pageChanged(_:)),
@@ -51,37 +58,41 @@ struct PDFKitView: UIViewRepresentable {
 
         return wrapper
     }
-    
+
     func updateUIView(_ wrapper: PDFWrapperView, context: Context) {
         let pdfView = wrapper.pdfView
         PDFManager.shared.currentPDFView = pdfView
         context.coordinator.parent = self
-        context.coordinator.wrapper = wrapper  // Coordinatorにwrapperを保持
-
-        // 設定適用
-        wrapper.isRightToLeft = isRightToLeft
-        wrapper.isTwoUp = isTwoUp
+        context.coordinator.wrapper = wrapper
 
         // ドキュメントまたは表示モードが変わったかチェック
         let documentChanged = wrapper.currentDocumentURL != url
         let targetMode: PDFDisplayMode = isTwoUp ? .twoUp : .singlePage
         let modeChanged = wrapper.currentDisplayMode != targetMode
+        let rtlChanged = wrapper.isRightToLeft != isRightToLeft
+
+        // 設定適用
+        wrapper.isRightToLeft = isRightToLeft
+        wrapper.isTwoUp = isTwoUp
 
         // 1. ドキュメント読み込み
         if documentChanged {
             if let document = PDFDocument(url: url) {
                 pdfView.document = document
                 wrapper.currentDocumentURL = url
-                wrapper.hasInitializedScale = false  // 新しいドキュメントなのでスケール再計算
-                wrapper.optimalScale = 0  // スケールリセット
+                wrapper.hasInitializedScale = false
+                wrapper.optimalScale = 0
 
                 // 保存されたマーカーを復元
                 restoreMarkers(to: document, pdfFileName: url.lastPathComponent)
             }
         }
 
-        // 2. 表示モード
+        // 2. 表示モード変更
         if modeChanged {
+            // モード変更中はレイアウトループを防止
+            wrapper.isSwitchingMode = true
+
             if isTwoUp {
                 pdfView.displayMode = .twoUp
                 pdfView.displaysAsBook = true
@@ -89,15 +100,23 @@ struct PDFKitView: UIViewRepresentable {
                 pdfView.displayMode = .singlePage
             }
             wrapper.currentDisplayMode = targetMode
-            wrapper.hasInitializedScale = false  // モード変更時もスケール再計算
-            wrapper.optimalScale = 0  // スケールリセット
+            wrapper.hasInitializedScale = false
+            wrapper.optimalScale = 0
         }
 
-        // 3. スケール調整（初回またはドキュメント/モード変更時のみ）
+        // Mac Catalyst: displaysRTLプロパティで RTL 対応
+        #if targetEnvironment(macCatalyst)
+        if rtlChanged || modeChanged || documentChanged {
+            pdfView.displaysRTL = isRightToLeft
+        }
+        #endif
+
+        // 3. スケール調整（モード変更時は少し遅延させてPDFViewの内部レイアウト完了を待つ）
         if !wrapper.hasInitializedScale {
-            // layoutSubviewsが呼ばれた後にスケールを計算
-            DispatchQueue.main.async {
+            let delay: TimeInterval = modeChanged ? 0.1 : 0.0
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                 wrapper.calculateAndApplyOptimalScale()
+                wrapper.isSwitchingMode = false
             }
         }
 
@@ -105,9 +124,9 @@ struct PDFKitView: UIViewRepresentable {
         if let doc = pdfView.document,
            let page = doc.page(at: currentPageIndex) {
             if pdfView.currentPage != page {
-                DispatchQueue.main.async {
+                let delay: TimeInterval = modeChanged ? 0.15 : 0.0
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                     pdfView.go(to: page)
-                    // ページ移動後にスケールを再適用
                     if wrapper.optimalScale > 0 {
                         pdfView.scaleFactor = wrapper.optimalScale
                     }
@@ -115,9 +134,12 @@ struct PDFKitView: UIViewRepresentable {
             }
         }
 
-        wrapper.setNeedsLayout()
+        // モード変更時はsetNeedsLayoutしない（遅延計算に任せる）
+        if !modeChanged {
+            wrapper.setNeedsLayout()
+        }
     }
-    
+
     // ドキュメント全体の最大ページサイズを取得
     private func getMaxPageSize(document: PDFDocument) -> CGSize {
         var maxWidth: CGFloat = 0
@@ -215,10 +237,9 @@ struct PDFKitView: UIViewRepresentable {
     // --- 座標反転ラッパー ---
     class PDFWrapperView: UIView {
         let pdfView: PDFView
-        var isRightToLeft: Bool = false {
-            didSet { setNeedsLayout() }
-        }
+        var isRightToLeft: Bool = false
         var isTwoUp: Bool = false
+        weak var coordinator: Coordinator?
 
         // スケール管理用
         var hasInitializedScale: Bool = false
@@ -226,6 +247,9 @@ struct PDFKitView: UIViewRepresentable {
         var currentDisplayMode: PDFDisplayMode?
         var optimalScale: CGFloat = 1.0
         private var lastBoundsSize: CGSize = .zero
+        private var isRecalculatingScale: Bool = false
+        // モード切替中フラグ（layoutSubviewsのループ防止）
+        var isSwitchingMode: Bool = false
 
         init(pdfView: PDFView) {
             self.pdfView = pdfView
@@ -242,42 +266,134 @@ struct PDFKitView: UIViewRepresentable {
 
         required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+        // キーボード入力を受け取るために必要
+        override var canBecomeFirstResponder: Bool { true }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            // ビューが表示されたらファーストレスポンダーになる
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                self.becomeFirstResponder()
+            }
+        }
+
+        // Mac用キーボードコマンド（矢印キーでページ送り）
+        override var keyCommands: [UIKeyCommand]? {
+            return [
+                UIKeyCommand(input: UIKeyCommand.inputLeftArrow, modifierFlags: [], action: #selector(handleLeftArrow)),
+                UIKeyCommand(input: UIKeyCommand.inputRightArrow, modifierFlags: [], action: #selector(handleRightArrow)),
+            ]
+        }
+
+        // pressesBegan でも矢印キーを処理（Mac Catalyst で PDFView がキーを消費する場合の対策）
+        override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+            var handled = false
+            for press in presses {
+                guard let key = press.key else { continue }
+                if key.keyCode == .keyboardLeftArrow {
+                    handleLeftArrow()
+                    handled = true
+                } else if key.keyCode == .keyboardRightArrow {
+                    handleRightArrow()
+                    handled = true
+                }
+            }
+            if !handled {
+                super.pressesBegan(presses, with: event)
+            }
+        }
+
+        @objc private func handleLeftArrow() {
+            #if targetEnvironment(macCatalyst)
+            // Mac: displaysRTLを使用しているため、PDFKitが方向を管理
+            // 常に左=前、右=次
+            goToPreviousPage()
+            #else
+            if isRightToLeft {
+                goToNextPage()
+            } else {
+                goToPreviousPage()
+            }
+            #endif
+        }
+
+        @objc private func handleRightArrow() {
+            #if targetEnvironment(macCatalyst)
+            goToNextPage()
+            #else
+            if isRightToLeft {
+                goToPreviousPage()
+            } else {
+                goToNextPage()
+            }
+            #endif
+        }
+
+        func goToNextPage() {
+            if pdfView.canGoToNextPage {
+                pdfView.goToNextPage(nil)
+                reapplyScale()
+            }
+        }
+
+        func goToPreviousPage() {
+            if pdfView.canGoToPreviousPage {
+                pdfView.goToPreviousPage(nil)
+                reapplyScale()
+            }
+        }
+
+        private func reapplyScale() {
+            if optimalScale > 0 {
+                pdfView.scaleFactor = optimalScale
+                disableScrolling()
+            }
+            // ページ送り後にファーストレスポンダーを維持（キーボード操作用）
+            if !isFirstResponder {
+                becomeFirstResponder()
+            }
+        }
+
         override func layoutSubviews() {
             super.layoutSubviews()
 
-            // boundsが変わった場合、またはスケールが初期化されていない場合にスケールを適用
+            // モード切替中はレイアウト処理をスキップ（updateUIViewの遅延処理に任せる）
+            guard !isSwitchingMode else { return }
+            // スケール再計算中のレイアウトループを防止
+            guard !isRecalculatingScale else { return }
+
+            // boundsが変わった場合にスケールを再計算
             let boundsChanged = lastBoundsSize != bounds.size
-            if boundsChanged {
+            if boundsChanged && bounds.height > 0 && bounds.width > 0 {
                 lastBoundsSize = bounds.size
-                // boundsが変わったらスケールを再計算
-                if bounds.height > 0 && bounds.width > 0 {
-                    calculateAndApplyOptimalScale()
-                }
+                calculateAndApplyOptimalScale()
             }
 
             // スケールが計算済みで、boundsが有効な場合は適用
             if optimalScale > 0 && bounds.height > 0 {
-                if pdfView.scaleFactor != optimalScale {
+                if abs(pdfView.scaleFactor - optimalScale) > 0.001 {
+                    isRecalculatingScale = true
                     pdfView.scaleFactor = optimalScale
+                    isRecalculatingScale = false
                 }
             } else if !hasInitializedScale && bounds.height > 0 && bounds.width > 0 {
-                // 初回スケール計算がまだの場合はここで計算
                 calculateAndApplyOptimalScale()
             }
 
+            #if !targetEnvironment(macCatalyst)
+            // iOS: transformを使ったRTL対応
             // まず全てリセット
             pdfView.transform = .identity
             resetSubviewsTransforms(in: pdfView)
 
             if isRightToLeft {
                 // 1. PDFView全体を左右反転（鏡像）
-                // これで [29][30] が [30(鏡)][29(鏡)] という配置に入れ替わります
                 pdfView.transform = CGAffineTransform(scaleX: -1, y: 1)
 
                 // 2. ページの中身だけを反転し返す
-                // DocumentView自体は反転させず（位置キープ）、その子供である「PageView」だけを反転させます
                 flipPagesOnly(in: pdfView)
             }
+            #endif
 
             // スクロールを無効化
             disableScrolling()
@@ -290,8 +406,12 @@ struct PDFKitView: UIViewRepresentable {
         }
 
         func calculateAndApplyOptimalScale() {
+            guard !isRecalculatingScale else { return }
             guard let document = pdfView.document else { return }
             guard bounds.height > 0 && bounds.width > 0 else { return }
+
+            isRecalculatingScale = true
+            defer { isRecalculatingScale = false }
 
             // ドキュメント全体の最大ページサイズを基準にする
             var maxWidth: CGFloat = 0
@@ -323,7 +443,7 @@ struct PDFKitView: UIViewRepresentable {
             pdfView.scaleFactor = optimalScale
             hasInitializedScale = true
         }
-        
+
         private func flipPagesOnly(in view: UIView) {
             // ScrollViewを探す
             if let scrollView = view.subviews.first(where: { $0 is UIScrollView }) {
@@ -337,7 +457,7 @@ struct PDFKitView: UIViewRepresentable {
                 }
             }
         }
-        
+
         private func resetSubviewsTransforms(in view: UIView) {
             for subview in view.subviews {
                 subview.transform = .identity
@@ -345,7 +465,7 @@ struct PDFKitView: UIViewRepresentable {
             }
         }
     }
-    
+
     class Coordinator: NSObject {
         var parent: PDFKitView
         weak var wrapper: PDFWrapperView?
@@ -371,13 +491,35 @@ struct PDFKitView: UIViewRepresentable {
                 guard let self = self,
                       let wrapper = self.wrapper,
                       wrapper.optimalScale > 0 else { return }
-                if pdfView.scaleFactor != wrapper.optimalScale {
+                if abs(pdfView.scaleFactor - wrapper.optimalScale) > 0.001 {
                     pdfView.scaleFactor = wrapper.optimalScale
                     wrapper.disableScrolling()
                 }
             }
         }
-        
+
+        #if targetEnvironment(macCatalyst)
+        @objc func handleTap(_ gesture: UITapGestureRecognizer) {
+            guard let wrapper = gesture.view as? PDFWrapperView else { return }
+            let location = gesture.location(in: wrapper)
+            let viewWidth = wrapper.bounds.width
+
+            // 画面の左1/3をクリック → 前/次、右1/3をクリック → 次/前
+            // 中央1/3はクリック無視（テキスト選択などのため）
+            let leftZone = viewWidth / 3.0
+            let rightZone = viewWidth * 2.0 / 3.0
+
+            if location.x < leftZone {
+                wrapper.goToPreviousPage()
+            } else if location.x > rightZone {
+                wrapper.goToNextPage()
+            }
+
+            // タップ後にファーストレスポンダーを復帰（キーボード操作を維持）
+            wrapper.becomeFirstResponder()
+        }
+        #endif
+
         @objc func handleSwipe(_ gesture: UISwipeGestureRecognizer) {
             guard let wrapper = gesture.view as? PDFWrapperView else { return }
             let pdfView = wrapper.pdfView
@@ -466,16 +608,19 @@ struct PDFKitView: UIViewRepresentable {
 
                 // 右開きモードの場合、ページを水平反転してキャプチャ
                 // （表示と同じ向きにするため）
+                // Mac CatalystではdisplaysRTLを使うので反転不要
+                #if !targetEnvironment(macCatalyst)
                 if isRTL {
                     ctx.cgContext.translateBy(x: pageRect.width, y: 0)
                     ctx.cgContext.scaleBy(x: -1, y: 1)
                 }
+                #endif
 
                 currentPage.draw(with: .mediaBox, to: ctx.cgContext)
             }
         }
     }
-    
+
     static func addHighlightToSelection() {
         guard let pdfView = PDFManager.shared.currentPDFView,
               let selection = pdfView.currentSelection else { return }

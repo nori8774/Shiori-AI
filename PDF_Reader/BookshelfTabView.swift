@@ -309,6 +309,7 @@ struct BookshelfPickerView: View {
                 }
             }
         }
+        .navigationViewStyle(.stack)
     }
 }
 
@@ -316,7 +317,6 @@ struct BookshelfPickerView: View {
 
 struct ImportBookshelfPickerView: View {
     let book: Book
-    @Binding var isPresented: Bool
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var bookshelfManager = BookshelfManager.shared
     @ObservedObject var libraryManager = LibraryManager.shared
@@ -344,7 +344,7 @@ struct ImportBookshelfPickerView: View {
                     // 未分類
                     Button(action: {
                         libraryManager.moveBookToShelf(book, shelfId: nil)
-                        isPresented = false
+                        dismiss()
                     }) {
                         HStack {
                             Image(systemName: "tray")
@@ -362,7 +362,7 @@ struct ImportBookshelfPickerView: View {
                     ForEach(bookshelfManager.bookshelves) { shelf in
                         Button(action: {
                             libraryManager.moveBookToShelf(book, shelfId: shelf.id)
-                            isPresented = false
+                            dismiss()
                         }) {
                             HStack {
                                 Image(systemName: shelf.icon)
@@ -397,7 +397,7 @@ struct ImportBookshelfPickerView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("スキップ") {
-                        isPresented = false
+                        dismiss()
                     }
                 }
             }
@@ -405,6 +405,7 @@ struct ImportBookshelfPickerView: View {
                 BookshelfEditorView(mode: .create)
             }
         }
+        .navigationViewStyle(.stack)
     }
 }
 

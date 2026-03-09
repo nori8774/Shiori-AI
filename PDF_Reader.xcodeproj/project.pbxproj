@@ -8,11 +8,12 @@
 
 /* Begin PBXBuildFile section */
 		92499D502EEE70FF001F9E80 /* GoogleGenerativeAI in Frameworks */ = {isa = PBXBuildFile; productRef = 92499D4F2EEE70FF001F9E80 /* GoogleGenerativeAI */; };
-		92499D522EEE80001F9E80 /* VecturaKit in Frameworks */ = {isa = PBXBuildFile; productRef = 92499D512EEE80001F9E80 /* VecturaKit */; };
-		92499D542EEE80001F9E80 /* VecturaNLKit in Frameworks */ = {isa = PBXBuildFile; productRef = 92499D532EEE80001F9E80 /* VecturaNLKit */; };
+		92499D522EEE80001F9E80 /* VecturaKit in Frameworks */ = {isa = PBXBuildFile; platformFilter = ios; productRef = 92499D512EEE80001F9E80 /* VecturaKit */; };
+		92499D542EEE80001F9E80 /* VecturaNLKit in Frameworks */ = {isa = PBXBuildFile; platformFilter = ios; productRef = 92499D532EEE80001F9E80 /* VecturaNLKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		920FEBE62F5E9E7F0079472F /* Shiori-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Shiori-Info.plist"; sourceTree = "<group>"; };
 		92A725502EEE4BD000D93F22 /* Shiori.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Shiori.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -41,6 +42,7 @@
 		92A725472EEE4BD000D93F22 = {
 			isa = PBXGroup;
 			children = (
+				920FEBE62F5E9E7F0079472F /* Shiori-Info.plist */,
 				92A725522EEE4BD000D93F22 /* PDF_Reader */,
 				92A725512EEE4BD000D93F22 /* Products */,
 			);
@@ -266,10 +268,11 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = 887J2S2SB5;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Shiori-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Shiori-AI";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -281,10 +284,13 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.01;
+				MARKETING_VERSION = 1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.nori8774.shiori-AI";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = YES;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -300,10 +306,11 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = 887J2S2SB5;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Shiori-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Shiori-AI";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -315,10 +322,13 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.01;
+				MARKETING_VERSION = 1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.nori8774.shiori-AI";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = YES;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;

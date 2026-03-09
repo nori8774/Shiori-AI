@@ -1,4 +1,5 @@
 import Foundation
+#if !targetEnvironment(macCatalyst)
 import VecturaKit
 
 /// Gemini Embedding APIを使用するVecturaEmbedder実装
@@ -130,6 +131,7 @@ public actor GeminiEmbedder: VecturaEmbedder {
         return floatVector
     }
 }
+#endif
 
 // MARK: - Errors
 

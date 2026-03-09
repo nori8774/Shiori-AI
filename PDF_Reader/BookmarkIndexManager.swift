@@ -3,7 +3,9 @@ import SwiftUI
 import UIKit
 import PDFKit
 import Combine
+#if !targetEnvironment(macCatalyst)
 import VecturaKit
+#endif
 
 // MARK: - Data Models
 
@@ -62,6 +64,34 @@ struct BookmarkIndexMetadata: Codable, Identifiable {
 
 // MARK: - BookmarkIndexManager
 
+#if targetEnvironment(macCatalyst)
+// Mac Catalyst ではセマンティック検索は利用不可（VecturaKit非対応のため）
+class BookmarkIndexManager: ObservableObject {
+    @MainActor static let shared = BookmarkIndexManager()
+
+    @MainActor @Published var isIndexing = false
+    @MainActor @Published var indexingProgress: String?
+    @MainActor @Published var indexedCount: Int = 0
+
+    @MainActor private init() {}
+
+    func processPendingTasksOnLaunch() async {}
+
+    func indexBookmark(bookId: UUID?, pdfFileName: String, pageIndex: Int, pdfDocument: PDFDocument?) async {}
+
+    func cancelScheduledIndexing(pdfFileName: String, pageIndex: Int) {}
+
+    func removeIndex(pdfFileName: String, pageIndex: Int) async {}
+
+    func searchWithReranking(query: String, topK: Int = 5) async throws -> [RankedPageResult] {
+        throw SearchError.notAvailableOnMac
+    }
+
+    func rebuildAllIndexes() async {}
+
+    func clearAllIndexes() async {}
+}
+#else
 class BookmarkIndexManager: ObservableObject {
     @MainActor static let shared = BookmarkIndexManager()
 
@@ -76,6 +106,10 @@ class BookmarkIndexManager: ObservableObject {
     private var pdfIndexStore: [String: PDFIndexMetadata] = [:]  // key: pdfFileName
     private let pdfIndexFileName = "pdf_index_metadata.json"
 
+    // 初期化完了待機用
+    private var isInitialized = false
+    private var initializationContinuations: [CheckedContinuation<Void, Never>] = []
+
     // 旧形式（マイグレーション用、読み取り専用）
     private var metadataStore: [UUID: BookmarkIndexMetadata] = [:]
     private let metadataFileName = "bookmark_index_metadata.json"
@@ -87,14 +121,19 @@ class BookmarkIndexManager: ObservableObject {
 
     @MainActor
     private init() {
+        #if !targetEnvironment(macCatalyst)
         Task {
             await initialize()
         }
+        #endif
     }
 
     // MARK: - Initialization
 
     private func initialize() async {
+        #if targetEnvironment(macCatalyst)
+        print("BookmarkIndexManager: Not available on Mac Catalyst")
+        #else
         do {
             // Gemini Embedder（日本語対応）
             embedder = try await GeminiEmbedder()
@@ -136,6 +175,25 @@ class BookmarkIndexManager: ObservableObject {
             print("BookmarkIndexManager initialized with \(pdfIndexStore.count) PDFs, \(totalPages) pages (Hybrid search enabled)")
         } catch {
             print("BookmarkIndexManager initialization failed: \(error)")
+        }
+        // 初期化完了を通知
+        isInitialized = true
+        for continuation in initializationContinuations {
+            continuation.resume()
+        }
+        initializationContinuations.removeAll()
+        #endif
+    }
+
+    /// 初期化完了を待つ
+    private func waitForInitialization() async {
+        if isInitialized { return }
+        await withCheckedContinuation { continuation in
+            if isInitialized {
+                continuation.resume()
+            } else {
+                initializationContinuations.append(continuation)
+            }
         }
     }
 
@@ -229,6 +287,7 @@ class BookmarkIndexManager: ObservableObject {
         pageIndex: Int,
         pdfDocument: PDFDocument?
     ) async {
+        await waitForInitialization()
         guard vectorDB != nil else {
             print("VectorDB not initialized")
             return
@@ -387,6 +446,9 @@ class BookmarkIndexManager: ObservableObject {
 
     /// セマンティック検索（PDF単位で結果を返す）
     func search(query: String, numResults: Int = 5) async throws -> [BookmarkSearchResult] {
+        // 初期化完了を待つ
+        await waitForInitialization()
+
         print("=== SEARCH START ===")
         print("Query: \(query)")
         print("PDFIndexStore count: \(pdfIndexStore.count)")
@@ -1212,3 +1274,4 @@ class BookmarkIndexManager: ObservableObject {
         await indexFromRawText(pdfFileName: pdfFileName, pageIndex: pageIndex, rawText: rawText)
     }
 }
+#endif

@@ -1,6 +1,6 @@
 import Foundation
 import SwiftUI
-import Combine  // ← これが足りていませんでした！追加してください
+import Combine
 
 // 保存するデータの形（読書ログ）
 struct ReadingLog: Codable, Identifiable {

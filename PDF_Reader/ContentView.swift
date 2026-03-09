@@ -1,5 +1,6 @@
 import SwiftUI
 import PDFKit
+import UniformTypeIdentifiers
 
 class PDFManager {
     static let shared = PDFManager()
@@ -55,11 +56,11 @@ struct ContentView: View {
     @State private var nextPageImage: UIImage?
 
     // 本棚ピッカー用
-    @State private var showBookshelfPicker = false
     @State private var bookToMoveToShelf: Book?
+    // Mac用：左クリック長押しメニュー
+    @State private var bookForActionMenu: Book?
 
     // インポート後の本棚選択用
-    @State private var showImportBookshelfPicker = false
     @State private var newlyImportedBook: Book?
 
     // 本棚管理画面
@@ -165,40 +166,45 @@ struct ContentView: View {
                                 } else {
                                     LazyVGrid(columns: columns, spacing: 30) {
                                         ForEach(filteredBooks) { book in
-                                        Button(action: {
-                                            checkDirectionAndOpen(book)
-                                        }) {
-                                            VStack {
-                                                if let thumb = libraryManager.getThumbnail(for: book) {
-                                                    Image(uiImage: thumb)
-                                                        .resizable().scaledToFit().frame(height: 140)
-                                                        .cornerRadius(8).shadow(radius: 4)
-                                                } else {
-                                                    ZStack {
-                                                        Color.gray.opacity(0.3)
-                                                        Image(systemName: "doc.text").font(.largeTitle)
-                                                    }
-                                                    .frame(height: 140).cornerRadius(8)
+                                        VStack {
+                                            if let thumb = libraryManager.getThumbnail(for: book) {
+                                                Image(uiImage: thumb)
+                                                    .resizable().scaledToFit().frame(height: 140)
+                                                    .cornerRadius(8).shadow(radius: 4)
+                                            } else {
+                                                ZStack {
+                                                    Color.gray.opacity(0.3)
+                                                    Image(systemName: "doc.text").font(.largeTitle)
                                                 }
-                                                // 現在の設定を表示
-                                                HStack {
-                                                    Text(book.fileName)
-                                                        .font(.caption).foregroundColor(.primary)
-                                                        .lineLimit(1)
-                                                    if let isRTL = book.isRightToLeft {
-                                                        Image(systemName: isRTL ? "arrow.right.to.line" : "arrow.left.to.line")
-                                                            .font(.caption2)
-                                                            .foregroundColor(.gray)
-                                                    }
+                                                .frame(height: 140).cornerRadius(8)
+                                            }
+                                            // 現在の設定を表示
+                                            HStack {
+                                                Text(book.fileName)
+                                                    .font(.caption).foregroundColor(.primary)
+                                                    .lineLimit(1)
+                                                if let isRTL = book.isRightToLeft {
+                                                    Image(systemName: isRTL ? "arrow.right.to.line" : "arrow.left.to.line")
+                                                        .font(.caption2)
+                                                        .foregroundColor(.gray)
                                                 }
                                             }
                                         }
-                                            // 長押しで設定変更
-                                            .contextMenu {
+                                        .contentShape(Rectangle())
+                                        .onTapGesture {
+                                            checkDirectionAndOpen(book)
+                                        }
+                                        #if targetEnvironment(macCatalyst)
+                                        // Mac: 左クリック長押しでアクションメニューを表示
+                                        .onLongPressGesture {
+                                            bookForActionMenu = book
+                                        }
+                                        #endif
+                                        // 長押し（iPad）/ 右クリック（Mac）で設定変更
+                                        .contextMenu {
                                                 // 本棚を変更
                                                 Button {
                                                     bookToMoveToShelf = book
-                                                    showBookshelfPicker = true
                                                 } label: {
                                                     Label("本棚を変更", systemImage: "folder")
                                                 }
@@ -226,9 +232,9 @@ struct ContentView: View {
                                                     }
                                                 } label: { Label("削除", systemImage: "trash") }
                                             }
-                                        }
                                     }
                                     .padding()
+                                    }
                                 }
                             }
                         }
@@ -280,40 +286,42 @@ struct ContentView: View {
                     if let url = selectedFileURL {
                         // === 読書中のメニュー ===
 
-                        // 検索（タップ: しおりセマンティック検索、長押し: PDF内検索）
-                        Button(action: {
-                            floatingSearchState.toggle()
-                        }) {
-                            Image(systemName: "magnifyingglass")
-                                .foregroundColor(floatingSearchState.isVisible ? .blue : .primary)
-                        }
-                        .simultaneousGesture(
-                            LongPressGesture(minimumDuration: 0.5)
-                                .onEnded { _ in
-                                    showSearch = true
-                                }
-                        )
+                        // iPad/Mac: ツールバーボタンを直接表示
+                        if DeviceHelper.isPadOrMac {
+                            // 検索
+                            Button(action: {
+                                floatingSearchState.toggle()
+                            }) {
+                                Image(systemName: "magnifyingglass")
+                                    .foregroundColor(floatingSearchState.isVisible ? .blue : .primary)
+                            }
+                            .simultaneousGesture(
+                                LongPressGesture(minimumDuration: 0.5)
+                                    .onEnded { _ in
+                                        showSearch = true
+                                    }
+                            )
 
-                        // マーカーツール
-                        // タップ: ON/OFF切替、長押し: 設定ポップオーバー
-                        Button(action: { markerManager.isMarkerMode.toggle() }) {
-                            Image(systemName: markerManager.isMarkerMode ? "pencil.tip.crop.circle.fill" : "pencil.tip.crop.circle")
-                                .foregroundColor(markerManager.isMarkerMode ? markerManager.selectedColor.swiftUIColor : .orange)
+                            // マーカーツール
+                            Button(action: { markerManager.isMarkerMode.toggle() }) {
+                                Image(systemName: markerManager.isMarkerMode ? "pencil.tip.crop.circle.fill" : "pencil.tip.crop.circle")
+                                    .foregroundColor(markerManager.isMarkerMode ? markerManager.selectedColor.swiftUIColor : .orange)
+                            }
+                            .simultaneousGesture(
+                                LongPressGesture(minimumDuration: 0.5)
+                                    .onEnded { _ in
+                                        showMarkerToolbar = true
+                                    }
+                            )
+
+                            // しおり
+                            Button(action: toggleBookmark) {
+                                let isBookmarked = bookmarkManager.isBookmarked(pdfFileName: url.lastPathComponent, pageIndex: currentPageIndex)
+                                Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
+                                    .foregroundColor(isBookmarked ? .red : .blue)
+                            }
                         }
-                        .simultaneousGesture(
-                            LongPressGesture(minimumDuration: 0.5)
-                                .onEnded { _ in
-                                    showMarkerToolbar = true
-                                }
-                        )
-                        
-                        // しおり
-                        Button(action: toggleBookmark) {
-                            let isBookmarked = bookmarkManager.isBookmarked(pdfFileName: url.lastPathComponent, pageIndex: currentPageIndex)
-                            Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
-                                .foregroundColor(isBookmarked ? .red : .blue)
-                        }
-                        
+
                         // 音声読み上げコントロール（読み上げ中のみ表示）
                         if ttsManager.isSpeaking {
                             HStack(spacing: 8) {
@@ -332,39 +340,103 @@ struct ContentView: View {
                             .cornerRadius(8)
                         }
 
-                        // AI
-                        Menu {
-                            Button(action: { executeWithConsentCheck { readCurrentPageAloud() } }) {
-                                Label("音声読み上げ", systemImage: "speaker.wave.2")
+                        // iPhone: コンパクトメニュー / iPad/Mac: AI解析ボタン
+                        if DeviceHelper.isPhone {
+                            // iPhoneではメニューにまとめる
+                            Menu {
+                                // しおり
+                                Button(action: toggleBookmark) {
+                                    let isBookmarked = bookmarkManager.isBookmarked(pdfFileName: url.lastPathComponent, pageIndex: currentPageIndex)
+                                    Label(isBookmarked ? "しおりを外す" : "しおりを追加", systemImage: isBookmarked ? "bookmark.slash" : "bookmark")
+                                }
+
+                                // マーカー
+                                Button(action: { markerManager.isMarkerMode.toggle() }) {
+                                    Label(markerManager.isMarkerMode ? "マーカーOFF" : "マーカーON", systemImage: "pencil.tip.crop.circle")
+                                }
+
+                                Button(action: { showMarkerToolbar = true }) {
+                                    Label("マーカー設定", systemImage: "paintpalette")
+                                }
+
+                                Divider()
+
+                                // 検索
+                                Button(action: { floatingSearchState.toggle() }) {
+                                    Label("しおり検索", systemImage: "magnifyingglass")
+                                }
+
+                                Button(action: { showSearch = true }) {
+                                    Label("PDF内検索", systemImage: "doc.text.magnifyingglass")
+                                }
+
+                                Divider()
+
+                                // AI
+                                Button(action: { executeWithConsentCheck { readCurrentPageAloud() } }) {
+                                    Label("音声読み上げ", systemImage: "speaker.wave.2")
+                                }
+                                .disabled(ttsManager.isSpeaking)
+
+                                Button(action: { executeWithConsentCheck { analyzeCurrentPage(instruction: "このページの内容を自然な日本語に翻訳してください") } }) {
+                                    Label("日本語に翻訳", systemImage: "character.book.closed.ja")
+                                }
+
+                                Button(action: { executeWithConsentCheck { questionText = ""; showQuestionInput = true } }) {
+                                    Label("このページに質問...", systemImage: "bubble.left.and.bubble.right")
+                                }
+
+                                Divider()
+
+                                Button(action: { executeWithConsentCheck { showPaperSummaryConfirm = true } }) {
+                                    Label("論文を要約（全体）", systemImage: "doc.text.magnifyingglass")
+                                }
+                            } label: {
+                                Image(systemName: "ellipsis.circle")
+                                    .font(.title3)
                             }
-                            .disabled(ttsManager.isSpeaking)
+                            .disabled(isAnalyzing || isSummarizing)
+                        } else {
+                            // iPad/Mac: AI解析メニュー
+                            Menu {
+                                Button(action: { executeWithConsentCheck { readCurrentPageAloud() } }) {
+                                    Label("音声読み上げ", systemImage: "speaker.wave.2")
+                                }
+                                .disabled(ttsManager.isSpeaking)
 
-                            Button(action: { executeWithConsentCheck { analyzeCurrentPage(instruction: "このページの内容を自然な日本語に翻訳してください") } }) { Label("日本語に翻訳", systemImage: "character.book.closed.ja") }
-                            Button(action: { executeWithConsentCheck { questionText = ""; showQuestionInput = true } }) { Label("このページに質問...", systemImage: "bubble.left.and.bubble.right") }
+                                Button(action: { executeWithConsentCheck { analyzeCurrentPage(instruction: "このページの内容を自然な日本語に翻訳してください") } }) { Label("日本語に翻訳", systemImage: "character.book.closed.ja") }
+                                Button(action: { executeWithConsentCheck { questionText = ""; showQuestionInput = true } }) { Label("このページに質問...", systemImage: "bubble.left.and.bubble.right") }
 
-                            Divider()
+                                Divider()
 
-                            Button(action: { executeWithConsentCheck { showPaperSummaryConfirm = true } }) {
-                                Label("論文を要約（全体）", systemImage: "doc.text.magnifyingglass")
+                                Button(action: { executeWithConsentCheck { showPaperSummaryConfirm = true } }) {
+                                    Label("論文を要約（全体）", systemImage: "doc.text.magnifyingglass")
+                                }
+                            } label: {
+                                HStack(spacing: 4) { Image(systemName: "sparkles"); Text("AI解析") }
+                                    .padding(6).background(Color.purple.opacity(0.1)).cornerRadius(8)
                             }
-                        } label: {
-                            HStack(spacing: 4) { Image(systemName: "sparkles"); Text("AI解析") }
-                                .padding(6).background(Color.purple.opacity(0.1)).cornerRadius(8)
+                            .disabled(isAnalyzing || isSummarizing)
+
+                            // 表示設定（見開き切替）
+                            Menu {
+                                Button(action: { isTwoUp.toggle() }) {
+                                    Label(isTwoUp ? "見開き表示" : "単ページ表示", systemImage: isTwoUp ? "book.fill" : "doc.fill")
+                                }
+                            } label: { Image(systemName: "eye") }
                         }
-                        .disabled(isAnalyzing || isSummarizing)
-                        
-                        // 表示設定（開き方向設定は削除しました）
-                        Menu {
-                            Button(action: { isTwoUp.toggle() }) {
-                                Label(isTwoUp ? "見開き表示" : "単ページ表示", systemImage: isTwoUp ? "book.fill" : "doc.fill")
-                            }
-                        } label: { Image(systemName: "eye") }
-                        
+
                     } else {
                         // === 本棚 ===
                         Button(action: { showSearch = true }) { Image(systemName: "magnifyingglass") }
                         Button(action: { showHistory = true }) { Image(systemName: "note.text") }
-                        Button(action: { isPickerPresented = true }) { Image(systemName: "plus.circle.fill").font(.title2) }
+                        Button(action: {
+                            #if targetEnvironment(macCatalyst)
+                            presentDocumentPickerOnMac()
+                            #else
+                            isPickerPresented = true
+                            #endif
+                        }) { Image(systemName: "plus.circle.fill").font(.title2) }
                     }
                 }
             )
@@ -390,13 +462,14 @@ struct ContentView: View {
                     set: { url in
                         if let url = url {
                             libraryManager.importPDF(from: url)
-                            // インポート後に本棚選択ダイアログを表示
+                            // インポート後に本棚選択ダイアログを表示（Mac以外）
+                            #if !targetEnvironment(macCatalyst)
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                                 if let book = libraryManager.books.first {
                                     newlyImportedBook = book
-                                    showImportBookshelfPicker = true
                                 }
                             }
+                            #endif
                         }
                     }
                 ))
@@ -421,17 +494,50 @@ struct ContentView: View {
                     pdfView: PDFManager.shared.currentPDFView
                 )
             }
-            .sheet(isPresented: $showBookshelfPicker) {
-                if let book = bookToMoveToShelf {
-                    BookshelfPickerView(book: book)
-                        .presentationDetents([.medium])
+            .sheet(item: $bookToMoveToShelf) { book in
+                BookshelfPickerView(book: book)
+                    #if !targetEnvironment(macCatalyst)
+                    .presentationDetents([.medium])
+                    #endif
+            }
+            // Mac用：左クリック長押しでのアクションメニュー
+            .confirmationDialog(
+                bookForActionMenu?.fileName ?? "",
+                isPresented: Binding(
+                    get: { bookForActionMenu != nil },
+                    set: { if !$0 { bookForActionMenu = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                if let book = bookForActionMenu {
+                    Button("本棚を変更") {
+                        bookToMoveToShelf = book
+                        bookForActionMenu = nil
+                    }
+                    Button("右開きに変更 (縦書き)") {
+                        LibraryManager.shared.updateBookDirection(book: book, isRightToLeft: true)
+                        bookForActionMenu = nil
+                    }
+                    Button("左開きに変更 (横書き)") {
+                        LibraryManager.shared.updateBookDirection(book: book, isRightToLeft: false)
+                        bookForActionMenu = nil
+                    }
+                    Button("削除", role: .destructive) {
+                        if let index = libraryManager.books.firstIndex(where: { $0.id == book.id }) {
+                            libraryManager.deleteBook(at: IndexSet(integer: index))
+                        }
+                        bookForActionMenu = nil
+                    }
+                    Button("キャンセル", role: .cancel) {
+                        bookForActionMenu = nil
+                    }
                 }
             }
-            .sheet(isPresented: $showImportBookshelfPicker) {
-                if let book = newlyImportedBook {
-                    ImportBookshelfPickerView(book: book, isPresented: $showImportBookshelfPicker)
-                        .presentationDetents([.medium])
-                }
+            .sheet(item: $newlyImportedBook) { book in
+                ImportBookshelfPickerView(book: book)
+                    #if !targetEnvironment(macCatalyst)
+                    .presentationDetents([.medium])
+                    #endif
             }
             .sheet(isPresented: $showBookshelfManager) {
                 BookshelfManagerView()
@@ -483,9 +589,42 @@ struct ContentView: View {
             }
         }
         .navigationViewStyle(StackNavigationViewStyle())
+        // ページ変更時に読書位置を保存
+        .onChange(of: currentPageIndex) { _, newValue in
+            if let book = currentOpenBook {
+                libraryManager.updateLastReadPage(book: book, pageIndex: newValue)
+            }
+        }
     }
-    
+
     // MARK: - Functions
+
+    #if targetEnvironment(macCatalyst)
+    // Mac用: UIDocumentPickerViewControllerを直接表示
+    func presentDocumentPickerOnMac() {
+        let types: [UTType] = [.pdf]
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: types, asCopy: true)
+        picker.allowsMultipleSelection = false
+
+        // コールバック用のデリゲートオブジェクト
+        let delegate = MacDocumentPickerDelegate { [self] url in
+            libraryManager.importPDF(from: url)
+        }
+        picker.delegate = delegate
+        // デリゲートが解放されないように保持
+        objc_setAssociatedObject(picker, "delegate", delegate, .OBJC_ASSOCIATION_RETAIN)
+
+        // 最前面のUIWindowSceneからpresent
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let rootVC = windowScene.windows.first?.rootViewController {
+            var topVC = rootVC
+            while let presented = topVC.presentedViewController {
+                topVC = presented
+            }
+            topVC.present(picker, animated: true)
+        }
+    }
+    #endif
 
     // MARK: - AI同意チェック
 
@@ -515,6 +654,25 @@ struct ContentView: View {
         self.currentBookIsRightToLeft = direction
         self.selectedFileURL = url
         self.currentOpenBook = book
+
+        // iPhoneでは見開き表示を無効化
+        if DeviceHelper.isPhone {
+            self.isTwoUp = false
+        }
+
+        // 最後に読んだページを復元
+        self.currentPageIndex = book.lastReadPage
+
+        // PDFViewが読み込まれた後にページを復元
+        if book.lastReadPage > 0 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                if let pdfView = PDFManager.shared.currentPDFView,
+                   let document = pdfView.document,
+                   let page = document.page(at: book.lastReadPage) {
+                    pdfView.go(to: page)
+                }
+            }
+        }
     }
     
     func toggleBookmark() {
@@ -535,9 +693,9 @@ struct ContentView: View {
     func analyzeCurrentPage(instruction: String) {
         guard let pdfView = PDFManager.shared.currentPDFView else { errorMessage = "PDFが開かれていません"; return }
 
-        // 見開き表示の場合は両ページをキャプチャ
+        // 見開き表示の場合は両ページをキャプチャ（iPadの見開きモードのみ）
         let image: UIImage?
-        if isTwoUp {
+        if isTwoUp && DeviceHelper.isPadOrMac {
             image = pdfView.takeSpreadSnapshot(isRightToLeft: currentBookIsRightToLeft)
         } else {
             image = pdfView.takeSnapshot()
@@ -630,9 +788,9 @@ struct ContentView: View {
             return
         }
 
-        // 見開き表示の場合は両ページをキャプチャ
+        // 見開き表示の場合は両ページをキャプチャ（iPad/Macの見開きモードのみ）
         let image: UIImage?
-        if isTwoUp {
+        if isTwoUp && DeviceHelper.isPadOrMac {
             image = pdfView.takeSpreadSnapshot(isRightToLeft: currentBookIsRightToLeft)
         } else {
             image = pdfView.takeSnapshot()
@@ -748,7 +906,7 @@ struct EmptyShelfView: View {
             Text("「\(shelfName)」には本がありません")
                 .font(.headline)
                 .foregroundColor(.gray)
-            Text("本を長押しして本棚に追加できます")
+            Text(DeviceHelper.isMac ? "本を右クリックして本棚に追加できます" : "本を長押しして本棚に追加できます")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
             Spacer()
@@ -831,7 +989,7 @@ struct ResultView: View {
                 let textToShare = """
                 【AI回答】
                 \(result.summary)
-                
+
                 ---
                 【原文】
                 \(result.rawText)
@@ -841,3 +999,20 @@ struct ResultView: View {
         }
     }
 }
+
+// MARK: - Mac用 DocumentPicker デリゲート
+#if targetEnvironment(macCatalyst)
+class MacDocumentPickerDelegate: NSObject, UIDocumentPickerDelegate {
+    let onPick: (URL) -> Void
+
+    init(onPick: @escaping (URL) -> Void) {
+        self.onPick = onPick
+    }
+
+    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        if let url = urls.first {
+            onPick(url)
+        }
+    }
+}
+#endif
