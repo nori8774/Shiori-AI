@@ -3,10 +3,8 @@ import SwiftUI
 import PDFKit
 import Combine
 import NaturalLanguage
-#if !targetEnvironment(macCatalyst)
 import VecturaKit
 import VecturaNLKit
-#endif
 
 // MARK: - Data Models
 
@@ -67,10 +65,8 @@ class SemanticSearchManager: ObservableObject {
     @Published var searchResults: [SearchResultItem] = []
     @Published var isSearching = false
 
-    #if !targetEnvironment(macCatalyst)
     private var vectorDB: VecturaKit?
     private var embedder: NLContextualEmbedder?
-    #endif
     private var chunks: [TextChunk] = []
     private let chunksFileName = "text_chunks.json"
 
@@ -83,19 +79,14 @@ class SemanticSearchManager: ObservableObject {
     }
 
     private init() {
-        #if !targetEnvironment(macCatalyst)
         Task {
             await initialize()
         }
-        #endif
     }
 
     // MARK: - Initialization
 
     func initialize() async {
-        #if targetEnvironment(macCatalyst)
-        print("SemanticSearchManager: Semantic search is not available on Mac")
-        #else
         do {
             // Create VecturaKit directory if needed
             if !FileManager.default.fileExists(atPath: vecturaDirectory.path) {
@@ -138,15 +129,11 @@ class SemanticSearchManager: ObservableObject {
         } catch {
             print("Failed to initialize SemanticSearchManager: \(error)")
         }
-        #endif
     }
 
     // MARK: - Indexing
 
     func indexBook(_ book: Book) async throws {
-        #if targetEnvironment(macCatalyst)
-        throw SearchError.notAvailableOnMac
-        #else
         guard let vectorDB = vectorDB else {
             throw SearchError.notInitialized
         }
@@ -198,11 +185,9 @@ class SemanticSearchManager: ObservableObject {
 
         // Update book index status
         LibraryManager.shared.markBookAsIndexed(book)
-        #endif
     }
 
     func indexAllBooks() async {
-        #if !targetEnvironment(macCatalyst)
         let books = LibraryManager.shared.books.filter { !$0.isIndexed }
 
         for book in books {
@@ -212,15 +197,11 @@ class SemanticSearchManager: ObservableObject {
                 print("Failed to index \(book.fileName): \(error)")
             }
         }
-        #endif
     }
 
     // MARK: - Search
 
     func search(query: String, limit: Int = 20, bookshelfId: UUID? = nil) async throws -> [SearchResultItem] {
-        #if targetEnvironment(macCatalyst)
-        throw SearchError.notAvailableOnMac
-        #else
         guard let vectorDB = vectorDB else {
             throw SearchError.notInitialized
         }
@@ -286,7 +267,6 @@ class SemanticSearchManager: ObservableObject {
 
         self.searchResults = searchResults
         return searchResults
-        #endif
     }
 
     // MARK: - Text Extraction & Chunking
@@ -440,7 +420,6 @@ enum SearchError: LocalizedError {
     case pdfLoadFailed
     case indexingFailed
     case searchFailed
-    case notAvailableOnMac
 
     var errorDescription: String? {
         switch self {
@@ -452,8 +431,6 @@ enum SearchError: LocalizedError {
             return "インデックス作成に失敗しました"
         case .searchFailed:
             return "検索に失敗しました"
-        case .notAvailableOnMac:
-            return "セマンティック検索はMac版では利用できません"
         }
     }
 }

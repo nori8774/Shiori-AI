@@ -1,5 +1,4 @@
 import Foundation
-#if !targetEnvironment(macCatalyst)
 import VecturaKit
 
 /// Gemini Embedding APIを使用するVecturaEmbedder実装
@@ -15,7 +14,8 @@ public actor GeminiEmbedder: VecturaEmbedder {
     /// APIキーをKeychainから取得して初期化
     public init() async throws {
         // 同意チェック
-        guard AIConsentManager.shared.hasConsent else {
+        let hasConsent = await AIConsentManager.shared.hasConsent
+        guard hasConsent else {
             throw GeminiEmbedderError.consentRequired
         }
 
@@ -131,7 +131,6 @@ public actor GeminiEmbedder: VecturaEmbedder {
         return floatVector
     }
 }
-#endif
 
 // MARK: - Errors
 

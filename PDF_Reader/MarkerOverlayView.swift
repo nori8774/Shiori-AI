@@ -54,16 +54,12 @@ struct MarkerCanvasRepresentable: UIViewRepresentable {
         canvasView.backgroundColor = .clear
         canvasView.isOpaque = false
 
-        // 設定に応じて入力方法を切り替え（Macでは常にanyInput）
-        #if targetEnvironment(macCatalyst)
-        canvasView.drawingPolicy = .anyInput
-        #else
+        // 設定に応じて入力方法を切り替え
         if InputMethodSettings.shared.inputMethod == .pencil {
             canvasView.drawingPolicy = .pencilOnly  // Apple Pencilのみ
         } else {
             canvasView.drawingPolicy = .anyInput  // 指での描画を許可
         }
-        #endif
 
         // PKCanvasView内のスクロールを無効化（ページ送りと干渉しないように）
         canvasView.isScrollEnabled = false
@@ -78,16 +74,12 @@ struct MarkerCanvasRepresentable: UIViewRepresentable {
         uiView.isUserInteractionEnabled = isMarkerMode
         context.coordinator.parent = self  // 親を更新
 
-        // 設定に応じて入力方法を切り替え（Macでは常にanyInput）
-        #if targetEnvironment(macCatalyst)
-        uiView.drawingPolicy = .anyInput
-        #else
+        // 設定に応じて入力方法を切り替え
         if InputMethodSettings.shared.inputMethod == .pencil {
             uiView.drawingPolicy = .pencilOnly
         } else {
             uiView.drawingPolicy = .anyInput
         }
-        #endif
 
         updateTool()
     }
@@ -164,11 +156,9 @@ struct MarkerCanvasRepresentable: UIViewRepresentable {
                 var ptInPage = pdfView.convert(ptInPDFView, to: targetPage)
 
                 // RTL補正: 内部LTRレイアウトにより反転したx座標を元に戻す
-                #if !targetEnvironment(macCatalyst)
                 if isRTL {
                     ptInPage.x = pageRect.width - ptInPage.x
                 }
-                #endif
 
                 // 正規化（0-1の範囲に変換）
                 let normalizedX = ptInPage.x / pageRect.width
@@ -344,12 +334,7 @@ struct MarkerToolbarView: View {
             }
 
             // 入力方法に応じたヒントテキスト
-            if DeviceHelper.isMac {
-                Text("ドラッグで線を引くとハイライト")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-            } else if InputMethodSettings.shared.inputMethod == .pencil {
+            if InputMethodSettings.shared.inputMethod == .pencil {
                 Text("Apple Pencilで線を引くとハイライト\n指でスワイプするとページ送り")
                     .font(.caption2)
                     .foregroundColor(.secondary)

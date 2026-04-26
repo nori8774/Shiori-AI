@@ -26,9 +26,9 @@ struct SettingsView: View {
             Form {
                 // MARK: - マーカー設定
                 Section(header: Text("マーカー設定")) {
-                    if InputMethodSettings.InputMethod.availableCases.count > 1 {
+                    if InputMethodSettings.InputMethod.allCases.count > 1 {
                         Picker("入力方法", selection: $inputMethodSettings.inputMethod) {
-                            ForEach(InputMethodSettings.InputMethod.availableCases, id: \.self) { method in
+                            ForEach(InputMethodSettings.InputMethod.allCases, id: \.self) { method in
                                 Text(method.displayName).tag(method)
                             }
                         }
@@ -76,16 +76,9 @@ struct SettingsView: View {
                         .foregroundColor(.gray)
 
                     // キー入力欄
-                    #if targetEnvironment(macCatalyst)
-                    // Mac: SecureFieldはペースト時にバインディングが更新されない問題があるためTextFieldを使用
-                    TextField("API Keyを入力", text: $apiKeyInput)
-                        .textFieldStyle(.roundedBorder)
-                        .disableAutocorrection(true)
-                    #else
                     SecureField("API Keyを入力", text: $apiKeyInput)
                         .autocapitalization(.none)
                         .disableAutocorrection(true)
-                    #endif
                 }
 
                 Section {

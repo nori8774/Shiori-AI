@@ -316,7 +316,7 @@ extension TextLineDetector {
         pageSize: CGSize,
         isRightToLeft: Bool
     ) -> CGRect {
-        var box = straightenedStroke.boundingBox
+        let box = straightenedStroke.boundingBox
 
         // 正規化座標からPDF座標に変換
         var pdfRect = CGRect(

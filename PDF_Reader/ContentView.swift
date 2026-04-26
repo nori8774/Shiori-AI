@@ -96,6 +96,10 @@ struct ContentView: View {
                     if let url = selectedFileURL {
                         // === A. PDF表示モード ===
                         ZStack(alignment: .topTrailing) {
+                            // 背景色をツールバー裏まで拡張（半透明効果を維持）
+                            Color(UIColor.systemGray6)
+                                .edgesIgnoringSafeArea(.all)
+
                             PDFKitView(
                                 url: url,
                                 isRightToLeft: currentBookIsRightToLeft,
@@ -106,7 +110,7 @@ struct ContentView: View {
                                 currentPageImage: $currentPageImage,
                                 nextPageImage: $nextPageImage
                             )
-                            .edgesIgnoringSafeArea(.all)
+                            .edgesIgnoringSafeArea(.bottom)
                             .id("\(url.absoluteString)-\(currentBookIsRightToLeft)-\(isTwoUp)")
                             .pageTurnAnimation(
                                 isAnimating: $isPageTurnAnimating,
@@ -125,7 +129,7 @@ struct ContentView: View {
                                     currentPageIndex: currentPageIndex,
                                     isRightToLeft: currentBookIsRightToLeft
                                 )
-                                .edgesIgnoringSafeArea(.all)
+                                .edgesIgnoringSafeArea(.bottom)
                             }
 
                             // しおりリボン（マーカー色に連動）
@@ -194,13 +198,7 @@ struct ContentView: View {
                                         .onTapGesture {
                                             checkDirectionAndOpen(book)
                                         }
-                                        #if targetEnvironment(macCatalyst)
-                                        // Mac: 左クリック長押しでアクションメニューを表示
-                                        .onLongPressGesture {
-                                            bookForActionMenu = book
-                                        }
-                                        #endif
-                                        // 長押し（iPad）/ 右クリック（Mac）で設定変更
+                                        // 長押しで設定変更
                                         .contextMenu {
                                                 // 本棚を変更
                                                 Button {
@@ -287,7 +285,7 @@ struct ContentView: View {
                         // === 読書中のメニュー ===
 
                         // iPad/Mac: ツールバーボタンを直接表示
-                        if DeviceHelper.isPadOrMac {
+                        if DeviceHelper.isPad {
                             // 検索
                             Button(action: {
                                 floatingSearchState.toggle()
@@ -431,11 +429,7 @@ struct ContentView: View {
                         Button(action: { showSearch = true }) { Image(systemName: "magnifyingglass") }
                         Button(action: { showHistory = true }) { Image(systemName: "note.text") }
                         Button(action: {
-                            #if targetEnvironment(macCatalyst)
-                            presentDocumentPickerOnMac()
-                            #else
                             isPickerPresented = true
-                            #endif
                         }) { Image(systemName: "plus.circle.fill").font(.title2) }
                     }
                 }
@@ -462,14 +456,12 @@ struct ContentView: View {
                     set: { url in
                         if let url = url {
                             libraryManager.importPDF(from: url)
-                            // インポート後に本棚選択ダイアログを表示（Mac以外）
-                            #if !targetEnvironment(macCatalyst)
+                            // インポート後に本棚選択ダイアログを表示
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                                 if let book = libraryManager.books.first {
                                     newlyImportedBook = book
                                 }
                             }
-                            #endif
                         }
                     }
                 ))
@@ -496,9 +488,7 @@ struct ContentView: View {
             }
             .sheet(item: $bookToMoveToShelf) { book in
                 BookshelfPickerView(book: book)
-                    #if !targetEnvironment(macCatalyst)
                     .presentationDetents([.medium])
-                    #endif
             }
             // Mac用：左クリック長押しでのアクションメニュー
             .confirmationDialog(
@@ -535,9 +525,7 @@ struct ContentView: View {
             }
             .sheet(item: $newlyImportedBook) { book in
                 ImportBookshelfPickerView(book: book)
-                    #if !targetEnvironment(macCatalyst)
                     .presentationDetents([.medium])
-                    #endif
             }
             .sheet(isPresented: $showBookshelfManager) {
                 BookshelfManagerView()
@@ -599,32 +587,6 @@ struct ContentView: View {
 
     // MARK: - Functions
 
-    #if targetEnvironment(macCatalyst)
-    // Mac用: UIDocumentPickerViewControllerを直接表示
-    func presentDocumentPickerOnMac() {
-        let types: [UTType] = [.pdf]
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: types, asCopy: true)
-        picker.allowsMultipleSelection = false
-
-        // コールバック用のデリゲートオブジェクト
-        let delegate = MacDocumentPickerDelegate { [self] url in
-            libraryManager.importPDF(from: url)
-        }
-        picker.delegate = delegate
-        // デリゲートが解放されないように保持
-        objc_setAssociatedObject(picker, "delegate", delegate, .OBJC_ASSOCIATION_RETAIN)
-
-        // 最前面のUIWindowSceneからpresent
-        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-           let rootVC = windowScene.windows.first?.rootViewController {
-            var topVC = rootVC
-            while let presented = topVC.presentedViewController {
-                topVC = presented
-            }
-            topVC.present(picker, animated: true)
-        }
-    }
-    #endif
 
     // MARK: - AI同意チェック
 
@@ -695,7 +657,7 @@ struct ContentView: View {
 
         // 見開き表示の場合は両ページをキャプチャ（iPadの見開きモードのみ）
         let image: UIImage?
-        if isTwoUp && DeviceHelper.isPadOrMac {
+        if isTwoUp && DeviceHelper.isPad {
             image = pdfView.takeSpreadSnapshot(isRightToLeft: currentBookIsRightToLeft)
         } else {
             image = pdfView.takeSnapshot()
@@ -790,7 +752,7 @@ struct ContentView: View {
 
         // 見開き表示の場合は両ページをキャプチャ（iPad/Macの見開きモードのみ）
         let image: UIImage?
-        if isTwoUp && DeviceHelper.isPadOrMac {
+        if isTwoUp && DeviceHelper.isPad {
             image = pdfView.takeSpreadSnapshot(isRightToLeft: currentBookIsRightToLeft)
         } else {
             image = pdfView.takeSnapshot()
@@ -906,7 +868,7 @@ struct EmptyShelfView: View {
             Text("「\(shelfName)」には本がありません")
                 .font(.headline)
                 .foregroundColor(.gray)
-            Text(DeviceHelper.isMac ? "本を右クリックして本棚に追加できます" : "本を長押しして本棚に追加できます")
+            Text("本を長押しして本棚に追加できます")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
             Spacer()
@@ -999,20 +961,3 @@ struct ResultView: View {
         }
     }
 }
-
-// MARK: - Mac用 DocumentPicker デリゲート
-#if targetEnvironment(macCatalyst)
-class MacDocumentPickerDelegate: NSObject, UIDocumentPickerDelegate {
-    let onPick: (URL) -> Void
-
-    init(onPick: @escaping (URL) -> Void) {
-        self.onPick = onPick
-    }
-
-    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-        if let url = urls.first {
-            onPick(url)
-        }
-    }
-}
-#endif
