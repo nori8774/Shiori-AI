@@ -17,6 +17,12 @@ struct SettingsView: View {
     // マーカー入力設定
     @ObservedObject var inputMethodSettings = InputMethodSettings.shared
 
+    // 裏メニュー用
+    @State private var devTapCount: Int = 0
+    @State private var showDevMenu: Bool = false
+    @State private var showExportSheet: Bool = false
+    @State private var exportFileURL: URL? = nil
+
     // Keychainで使用する識別子（アプリ内で統一）
     let serviceName = "com.myapp.gemini" // 任意の識別子に変えてOK
     let accountName = "gemini_api_key"
@@ -166,6 +172,61 @@ struct SettingsView: View {
                         }
                     }
                 }
+
+                // MARK: - バージョン情報（5回タップで裏メニュー表示）
+                Section {
+                    let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "-"
+                    let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "-"
+                    HStack {
+                        Text("バージョン")
+                        Spacer()
+                        Text("\(version) (\(build))")
+                            .foregroundColor(.secondary)
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        devTapCount += 1
+                        if devTapCount >= 5 {
+                            showDevMenu = true
+                            devTapCount = 0
+                        }
+                    }
+                }
+
+                // MARK: - 開発者メニュー（裏メニュー）
+                if showDevMenu {
+                    Section(header: Text("開発者メニュー")) {
+                        Button {
+                            exportMarkersJSON()
+                        } label: {
+                            HStack {
+                                Image(systemName: "square.and.arrow.up")
+                                Text("markers.json をエクスポート")
+                            }
+                        }
+
+                        Button {
+                            exportBookmarksJSON()
+                        } label: {
+                            HStack {
+                                Image(systemName: "square.and.arrow.up")
+                                Text("bookmarks.json をエクスポート")
+                            }
+                        }
+
+                        Button {
+                            showDevMenu = false
+                        } label: {
+                            Text("開発者メニューを閉じる")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+            .sheet(isPresented: $showExportSheet) {
+                if let url = exportFileURL {
+                    ActivityView(activityItems: [url])
+                }
             }
             .sheet(isPresented: $showConsentSheet) {
                 AIConsentView(isPresented: $showConsentSheet)
@@ -216,6 +277,44 @@ struct SettingsView: View {
         loadStatus()
         print("API Key Deleted!")
     }
+
+    // MARK: - 開発者メニュー: エクスポート
+
+    func exportMarkersJSON() {
+        let src = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("markers.json")
+        exportFile(at: src, fallbackName: "markers.json")
+    }
+
+    func exportBookmarksJSON() {
+        let src = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("bookmarks.json")
+        exportFile(at: src, fallbackName: "bookmarks.json")
+    }
+
+    private func exportFile(at url: URL, fallbackName: String) {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            print("\(fallbackName) not found")
+            return
+        }
+        // tmpにコピーして共有（元ファイルを直接渡すとサンドボックスの問題が起きる場合がある）
+        let tmpURL = FileManager.default.temporaryDirectory.appendingPathComponent(fallbackName)
+        try? FileManager.default.removeItem(at: tmpURL)
+        try? FileManager.default.copyItem(at: url, to: tmpURL)
+        exportFileURL = tmpURL
+        showExportSheet = true
+    }
+}
+
+// MARK: - UIActivityViewController wrapper
+struct ActivityView: UIViewControllerRepresentable {
+    let activityItems: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 // プレビュー用

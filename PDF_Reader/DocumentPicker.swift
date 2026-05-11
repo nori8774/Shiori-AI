@@ -8,8 +8,9 @@ struct DocumentPicker: UIViewControllerRepresentable {
     @Binding var selectedFileURL: URL?
     
     func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
-        // PDFファイルのみを選択可能にする
-        let types: [UTType] = [.pdf]
+        // PDFファイルと.ebk（青空文庫）を選択可能にする
+        let ebkType = UTType(filenameExtension: "ebk") ?? .data
+        let types: [UTType] = [.pdf, ebkType]
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: types, asCopy: true) // asCopy: trueにするとアプリ内に一時コピーを作ります（安全のため推奨）
         picker.delegate = context.coordinator
         picker.allowsMultipleSelection = false // 1つだけ選ぶ

@@ -63,6 +63,10 @@ struct ContentView: View {
     // インポート後の本棚選択用
     @State private var newlyImportedBook: Book?
 
+    // EBKインポート用
+    @State private var pendingEBKURL: URL?
+    @State private var showEBKFontSizeDialog = false
+
     // 本棚管理画面
     @State private var showBookshelfManager = false
 
@@ -455,11 +459,19 @@ struct ContentView: View {
                     get: { nil },
                     set: { url in
                         if let url = url {
-                            libraryManager.importPDF(from: url)
-                            // インポート後に本棚選択ダイアログを表示
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                                if let book = libraryManager.books.first {
-                                    newlyImportedBook = book
+                            if url.pathExtension.lowercased() == "ebk" {
+                                // EBK: フォントサイズ選択ダイアログを表示
+                                pendingEBKURL = url
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                    showEBKFontSizeDialog = true
+                                }
+                            } else {
+                                // PDF: 通常インポート
+                                libraryManager.importPDF(from: url)
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                    if let book = libraryManager.books.first {
+                                        newlyImportedBook = book
+                                    }
                                 }
                             }
                         }
@@ -547,6 +559,13 @@ struct ContentView: View {
             } message: {
                 Text("この論文全体を解析し、要約ページ付きPDFを生成します。\n\n• 50ページ以下の論文に対応\n• 処理には数分かかる場合があります\n• 要約PDFは「要約」本棚に保存されます")
             }
+            // EBK文字サイズ選択ダイアログ
+            .confirmationDialog("文字サイズを選択", isPresented: $showEBKFontSizeDialog, titleVisibility: .visible) {
+                Button("小（コンパクト）") { importEBKWithSize(.small) }
+                Button("中（標準）") { importEBKWithSize(.medium) }
+                Button("大（読みやすい）") { importEBKWithSize(.large) }
+                Button("キャンセル", role: .cancel) { pendingEBKURL = nil }
+            }
             // AI同意ダイアログ
             .sheet(isPresented: $showAIConsentSheet) {
                 AIConsentView(isPresented: $showAIConsentSheet) {
@@ -587,6 +606,19 @@ struct ContentView: View {
 
     // MARK: - Functions
 
+    // MARK: - EBKインポート
+
+    func importEBKWithSize(_ fontSize: EBKFontSize) {
+        guard let url = pendingEBKURL else { return }
+        libraryManager.importEBK(from: url, fontSize: fontSize)
+        pendingEBKURL = nil
+        // インポート後に本棚選択ダイアログを表示
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            if let book = libraryManager.books.first {
+                newlyImportedBook = book
+            }
+        }
+    }
 
     // MARK: - AI同意チェック
 
