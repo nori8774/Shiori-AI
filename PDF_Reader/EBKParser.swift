@@ -226,7 +226,7 @@ class EBKParser {
             trimmedData.removeLast()
         }
 
-        // 複数のエンコーディングを試行（青空文庫EBKはShift_JIS/EUC-JP/JISが混在）
+        // 1. まず厳密デコードを試行
         let encodings: [(String.Encoding, String)] = [
             (.shiftJIS, "Shift_JIS"),
             (.japaneseEUC, "EUC-JP"),
@@ -242,57 +242,68 @@ class EBKParser {
             }
         }
 
-        // 末尾の不正バイトを削ってリトライ（各エンコーディング）
-        for (encoding, name) in encodings {
-            var retryData = trimmedData
-            for _ in 0..<20 {
-                guard !retryData.isEmpty else { break }
-                retryData.removeLast()
-                if let text = String(data: retryData, encoding: encoding),
-                   containsJapanese(text) {
-                    print("[EBK] デコード成功（トリム後）: \(name)")
-                    return text
-                }
-            }
-        }
-
-        // 最終手段: CFStringで lossy 変換（Shift_JIS）
-        let cfEncoding = CFStringConvertEncodingToNSStringEncoding(
-            CFStringEncoding(CFStringEncodings.shiftJIS.rawValue)
-        )
-        if let cfString = CFStringCreateWithBytes(
-            nil,
-            [UInt8](data),
-            data.count,
-            CFStringEncoding(cfEncoding),
-            true
-        ) {
-            let result = cfString as String
-            if containsJapanese(result) {
-                print("[EBK] デコード成功（CFString lossy）")
-                return result
-            }
-        }
-
-        // EUC-JPでもlossy変換を試みる
-        let eucEncoding = CFStringConvertEncodingToNSStringEncoding(
-            CFStringEncoding(CFStringEncodings.EUC_JP.rawValue)
-        )
-        if let cfString = CFStringCreateWithBytes(
-            nil,
-            [UInt8](data),
-            data.count,
-            CFStringEncoding(eucEncoding),
-            true
-        ) {
-            let result = cfString as String
-            if containsJapanese(result) {
-                print("[EBK] デコード成功（CFString EUC-JP lossy）")
-                return result
-            }
+        // 2. 厳密デコード失敗 → チャンク分割によるlossy Shift_JISデコード
+        //    不正バイトをスキップしながらデコードする
+        print("[EBK] 厳密デコード失敗、lossyデコードを試行...")
+        if let text = lossyDecodeShiftJIS(trimmedData), containsJapanese(text) {
+            print("[EBK] lossyデコード成功: \(text.count) chars")
+            return text
         }
 
         return nil
+    }
+
+    /// 不正バイトをスキップしながらShift_JISデコードする
+    private func lossyDecodeShiftJIS(_ data: Data) -> String? {
+        var result = ""
+        var i = 0
+        let bytes = [UInt8](data)
+
+        while i < bytes.count {
+            let b = bytes[i]
+
+            // ASCII範囲 (0x00-0x7F) + 半角カナ (0xA1-0xDF)
+            if b <= 0x7F {
+                result.append(Character(UnicodeScalar(b)))
+                i += 1
+                continue
+            }
+
+            if b >= 0xA1 && b <= 0xDF {
+                // 半角カタカナ
+                let singleByte = Data([b])
+                if let char = String(data: singleByte, encoding: .shiftJIS) {
+                    result.append(char)
+                }
+                i += 1
+                continue
+            }
+
+            // 2バイト文字 (先頭バイト: 0x81-0x9F, 0xE0-0xFC)
+            if (b >= 0x81 && b <= 0x9F) || (b >= 0xE0 && b <= 0xFC) {
+                if i + 1 < bytes.count {
+                    let b2 = bytes[i + 1]
+                    // 2バイト目の有効範囲: 0x40-0x7E, 0x80-0xFC
+                    if (b2 >= 0x40 && b2 <= 0x7E) || (b2 >= 0x80 && b2 <= 0xFC) {
+                        let twoByte = Data([b, b2])
+                        if let char = String(data: twoByte, encoding: .shiftJIS) {
+                            result.append(char)
+                        }
+                        // デコード失敗してもスキップ
+                        i += 2
+                        continue
+                    }
+                }
+                // 2バイト目が不正 or データ末尾 → スキップ
+                i += 1
+                continue
+            }
+
+            // その他の不正バイト → スキップ
+            i += 1
+        }
+
+        return result.isEmpty ? nil : result
     }
 
     /// 日本語文字（ひらがな・カタカナ・漢字）が含まれているか判定
