@@ -468,9 +468,11 @@ struct ContentView: View {
                                 }
                             } else {
                                 // PDF: 通常インポート
+                                let countBefore = libraryManager.books.count
                                 libraryManager.importPDF(from: url)
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                                    if let book = libraryManager.books.first {
+                                    if libraryManager.books.count > countBefore,
+                                       let book = libraryManager.books.first {
                                         newlyImportedBook = book
                                     }
                                 }
@@ -611,11 +613,13 @@ struct ContentView: View {
 
     func importEBKWithSize(_ fontSize: EBKFontSize) {
         guard let url = pendingEBKURL else { return }
+        let bookCountBefore = libraryManager.books.count
         libraryManager.importEBK(from: url, fontSize: fontSize)
         pendingEBKURL = nil
-        // インポート後に本棚選択ダイアログを表示
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            if let book = libraryManager.books.first {
+        // インポート後に本棚選択ダイアログを表示（実際に追加された場合のみ）
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            if libraryManager.books.count > bookCountBefore,
+               let book = libraryManager.books.first {
                 newlyImportedBook = book
             }
         }
