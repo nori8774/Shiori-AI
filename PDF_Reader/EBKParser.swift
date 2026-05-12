@@ -168,8 +168,9 @@ class EBKParser {
             guard idx + 8 <= data.count else { break }
 
             let typeValue = readUInt32BE(data, at: idx + 4)
-            // type値のフィルタを緩和（ファイルによって異なる）
-            if typeValue > 0 {
+            // type >= 0x80 はテキストコンテンツブロック（0x80=脚注, 0x81=タイトル, 0x84=本文, 0x85=奥付）
+            // type < 0x80 はページレイアウト等のバイナリデータなのでスキップ
+            if typeValue >= 0x80 {
                 blocks.append(TextBlock(offset: idx, type: typeValue, contentStart: idx + 8, contentEnd: 0))
             }
             searchPos = idx + 4
