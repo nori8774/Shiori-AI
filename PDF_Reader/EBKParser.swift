@@ -39,10 +39,17 @@ class EBKParser {
     }
 
     func parse(data: Data) throws -> EBKContent {
-        // 1. ヘッダー検証
-        guard data.count > 0x100,
-              data[8] == 0x62, data[9] == 0x6F, data[10] == 0x6F, data[11] == 0x6B // "book"
-        else {
+        // 1. ヘッダー検証（最低限のサイズチェック）
+        guard data.count > 0x40 else {
+            throw ParseError.invalidFormat
+        }
+        // "book" マーカーの存在を確認（位置は柔軟に）
+        let bookMarker: [UInt8] = [0x62, 0x6F, 0x6F, 0x6B]
+        let hasBookMarker = findBytes(bookMarker, in: data, from: 0) != nil
+        // TEXTマーカーの存在も確認
+        let textMarkerCheck: [UInt8] = [0x54, 0x45, 0x58, 0x54]
+        let hasTextMarker = findBytes(textMarkerCheck, in: data, from: 0) != nil
+        guard hasBookMarker || hasTextMarker else {
             throw ParseError.invalidFormat
         }
 
@@ -161,7 +168,8 @@ class EBKParser {
             guard idx + 8 <= data.count else { break }
 
             let typeValue = readUInt32BE(data, at: idx + 4)
-            if typeValue >= 0x80 {
+            // type値のフィルタを緩和（ファイルによって異なる）
+            if typeValue > 0 {
                 blocks.append(TextBlock(offset: idx, type: typeValue, contentStart: idx + 8, contentEnd: 0))
             }
             searchPos = idx + 4
@@ -188,10 +196,14 @@ class EBKParser {
 
         // 脚注・奥付を除外し、最大のブロックを返す
         let candidates = blocks.filter { block in
-            let sampleSize = min(50, block.size)
+            let sampleSize = min(100, block.size)
             guard sampleSize > 0 else { return false }
             let sample = Data(data[block.contentStart..<block.contentStart + sampleSize])
-            let text = String(data: sample, encoding: .shiftJIS) ?? ""
+            // 複数エンコーディングでサンプルデコード
+            let text = String(data: sample, encoding: .shiftJIS)
+                    ?? String(data: sample, encoding: .japaneseEUC)
+                    ?? String(data: sample, encoding: .utf8)
+                    ?? ""
             let isFootnote = text.hasPrefix("脚注")
             let isColophon = text.contains("奥付")
             return !isFootnote && !isColophon && block.size > 100
@@ -206,28 +218,44 @@ class EBKParser {
 
     // MARK: - Text Decoding
 
-    private func decodeShiftJIS(_ data: Data) -> String? {
-        // 末尾のバイナリメタデータ（null バイト等）をトリムしてからデコード
+    private func decodeJapaneseText(_ data: Data) -> String? {
+        // 末尾のバイナリメタデータ（null バイト等）をトリム
         var trimmedData = data
         while !trimmedData.isEmpty && trimmedData.last == 0x00 {
             trimmedData.removeLast()
         }
 
-        // Shift_JIS (Windows-31J / CP932) で変換
-        if let text = String(data: trimmedData, encoding: .shiftJIS) {
-            return text
-        }
+        // 複数のエンコーディングを試行（青空文庫EBKはShift_JIS/EUC-JP/JISが混在）
+        let encodings: [(String.Encoding, String)] = [
+            (.shiftJIS, "Shift_JIS"),
+            (.japaneseEUC, "EUC-JP"),
+            (.iso2022JP, "ISO-2022-JP"),
+            (.utf8, "UTF-8"),
+        ]
 
-        // 末尾の不正バイトを少しずつ削ってリトライ
-        for _ in 0..<20 {
-            guard !trimmedData.isEmpty else { return nil }
-            trimmedData.removeLast()
-            if let text = String(data: trimmedData, encoding: .shiftJIS) {
+        for (encoding, name) in encodings {
+            if let text = String(data: trimmedData, encoding: encoding),
+               containsJapanese(text) {
+                print("[EBK] デコード成功: \(name)")
                 return text
             }
         }
 
-        // 最終手段: CFStringで lossy 変換
+        // 末尾の不正バイトを削ってリトライ（各エンコーディング）
+        for (encoding, name) in encodings {
+            var retryData = trimmedData
+            for _ in 0..<20 {
+                guard !retryData.isEmpty else { break }
+                retryData.removeLast()
+                if let text = String(data: retryData, encoding: encoding),
+                   containsJapanese(text) {
+                    print("[EBK] デコード成功（トリム後）: \(name)")
+                    return text
+                }
+            }
+        }
+
+        // 最終手段: CFStringで lossy 変換（Shift_JIS）
         let cfEncoding = CFStringConvertEncodingToNSStringEncoding(
             CFStringEncoding(CFStringEncodings.shiftJIS.rawValue)
         )
@@ -236,12 +264,47 @@ class EBKParser {
             [UInt8](data),
             data.count,
             CFStringEncoding(cfEncoding),
-            true  // isExternalRepresentation = true で不正バイトを置換
+            true
         ) {
-            return cfString as String
+            let result = cfString as String
+            if containsJapanese(result) {
+                print("[EBK] デコード成功（CFString lossy）")
+                return result
+            }
+        }
+
+        // EUC-JPでもlossy変換を試みる
+        let eucEncoding = CFStringConvertEncodingToNSStringEncoding(
+            CFStringEncoding(CFStringEncodings.EUC_JP.rawValue)
+        )
+        if let cfString = CFStringCreateWithBytes(
+            nil,
+            [UInt8](data),
+            data.count,
+            CFStringEncoding(eucEncoding),
+            true
+        ) {
+            let result = cfString as String
+            if containsJapanese(result) {
+                print("[EBK] デコード成功（CFString EUC-JP lossy）")
+                return result
+            }
         }
 
         return nil
+    }
+
+    /// 日本語文字（ひらがな・カタカナ・漢字）が含まれているか判定
+    private func containsJapanese(_ text: String) -> Bool {
+        let sample = String(text.prefix(500))
+        let japanesePattern = try! NSRegularExpression(pattern: "[\\p{Hiragana}\\p{Katakana}\\p{Han}]")
+        let matches = japanesePattern.numberOfMatches(in: sample, range: NSRange(location: 0, length: (sample as NSString).length))
+        return matches >= 3
+    }
+
+    // 後方互換エイリアス
+    private func decodeShiftJIS(_ data: Data) -> String? {
+        return decodeJapaneseText(data)
     }
 
     // MARK: - Markup Processing
