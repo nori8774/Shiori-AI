@@ -92,8 +92,17 @@ class LibraryManager: ObservableObject {
             print("[EBK] PDF変換完了: \(pdfData.count) bytes")
 
             // ファイル名: "著者 - タイトル.pdf"
-            let pdfFileName = "\(content.metadata.author) - \(content.metadata.title).pdf"
+            var pdfFileName = "\(content.metadata.author) - \(content.metadata.title).pdf"
+
+            // 同名ファイルが既に存在する場合はスキップ（重複インポート防止）
             let destinationURL = documentsDirectory.appendingPathComponent(pdfFileName)
+            if FileManager.default.fileExists(atPath: destinationURL.path) {
+                // 既にライブラリにもあればスキップ
+                if books.contains(where: { $0.fileName == pdfFileName }) {
+                    print("[EBK] 既にインポート済み: \(pdfFileName)")
+                    return
+                }
+            }
 
             try pdfData.write(to: destinationURL)
             print("[EBK] PDF保存完了: \(pdfFileName)")

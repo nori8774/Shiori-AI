@@ -67,15 +67,73 @@ class EBKParser {
     // MARK: - Metadata Extraction
 
     private func extractMetadata(from data: Data) -> EBKMetadata {
-        let title = readShiftJISString(from: data, lengthOffset: 0x5C, stringOffset: 0x5D)
-        let author = readShiftJISString(from: data, lengthOffset: 0x9C, stringOffset: 0x9D)
+        // 複数のオフセットパターンを試行（EBKファイルによってヘッダー構造が異なる）
+        let title = extractMetadataField(from: data, knownOffsets: [
+            (lengthOffset: 0x5C, stringOffset: 0x5D),
+            (lengthOffset: 0x4C, stringOffset: 0x4D),
+            (lengthOffset: 0x6C, stringOffset: 0x6D),
+        ]) ?? extractTitleFromBody(data: data) ?? "不明"
+
+        let author = extractMetadataField(from: data, knownOffsets: [
+            (lengthOffset: 0x9C, stringOffset: 0x9D),
+            (lengthOffset: 0x8C, stringOffset: 0x8D),
+            (lengthOffset: 0xAC, stringOffset: 0xAD),
+        ]) ?? "不明"
+
         return EBKMetadata(title: title, author: author)
+    }
+
+    /// 複数のオフセット候補を試し、有効な日本語文字列を返す
+    private func extractMetadataField(from data: Data, knownOffsets: [(lengthOffset: Int, stringOffset: Int)]) -> String? {
+        for offset in knownOffsets {
+            let str = readShiftJISString(from: data, lengthOffset: offset.lengthOffset, stringOffset: offset.stringOffset)
+            if !str.isEmpty && isLikelyJapaneseText(str) {
+                return str
+            }
+        }
+        return nil
+    }
+
+    /// 文字列がまともな日本語/ASCII文字で構成されているか判定
+    private func isLikelyJapaneseText(_ text: String) -> Bool {
+        guard !text.isEmpty else { return false }
+        // 制御文字や置換文字が多い場合は不正
+        let badChars = text.filter { char in
+            guard char.isASCII, let ascii = char.asciiValue else { return false }
+            return ascii < 0x20 && ascii != 0x0A && ascii != 0x0D  // 非印字ASCII（改行除く）
+        }
+        return badChars.count < text.count / 4
+    }
+
+    /// 本文冒頭からタイトルらしき行を探す（フォールバック）
+    private func extractTitleFromBody(data: Data) -> String? {
+        guard let bodyData = findBodyTextBlock(in: data),
+              let rawText = decodeShiftJIS(bodyData) else { return nil }
+        // 最初の非空行をタイトルとして使う
+        let lines = rawText.components(separatedBy: .newlines)
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                .replacingOccurrences(of: "\u{11}", with: "")
+                .replacingOccurrences(of: "\u{14}", with: "")
+            if trimmed.count >= 2 && trimmed.count <= 50 {
+                // タグを除去
+                let tagPattern = try! NSRegularExpression(pattern: "<[^>]*>")
+                let cleaned = tagPattern.stringByReplacingMatches(
+                    in: trimmed, range: NSRange(location: 0, length: (trimmed as NSString).length),
+                    withTemplate: ""
+                )
+                if cleaned.count >= 2 {
+                    return cleaned
+                }
+            }
+        }
+        return nil
     }
 
     private func readShiftJISString(from data: Data, lengthOffset: Int, stringOffset: Int) -> String {
         guard lengthOffset < data.count else { return "" }
         let length = Int(data[lengthOffset])
-        guard length > 0, stringOffset + length <= data.count else { return "" }
+        guard length > 0, length <= 128, stringOffset + length <= data.count else { return "" }
         let bytes = data[stringOffset..<stringOffset + length]
         return String(data: Data(bytes), encoding: .shiftJIS) ?? ""
     }

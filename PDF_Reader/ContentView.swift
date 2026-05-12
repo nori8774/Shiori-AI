@@ -461,6 +461,7 @@ struct ContentView: View {
                         if let url = url {
                             if url.pathExtension.lowercased() == "ebk" {
                                 // EBK: フォントサイズ選択ダイアログを表示
+                                print("[EBK] 選択されたファイル: \(url.lastPathComponent)")
                                 pendingEBKURL = url
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                                     showEBKFontSizeDialog = true
@@ -560,7 +561,7 @@ struct ContentView: View {
                 Text("この論文全体を解析し、要約ページ付きPDFを生成します。\n\n• 50ページ以下の論文に対応\n• 処理には数分かかる場合があります\n• 要約PDFは「要約」本棚に保存されます")
             }
             // EBK文字サイズ選択ダイアログ
-            .confirmationDialog("文字サイズを選択", isPresented: $showEBKFontSizeDialog, titleVisibility: .visible) {
+            .confirmationDialog("「\(pendingEBKURL?.deletingPathExtension().lastPathComponent ?? "")」の文字サイズを選択", isPresented: $showEBKFontSizeDialog, titleVisibility: .visible) {
                 Button("小（コンパクト）") { importEBKWithSize(.small) }
                 Button("中（標準）") { importEBKWithSize(.medium) }
                 Button("大（読みやすい）") { importEBKWithSize(.large) }
